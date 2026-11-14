@@ -254,6 +254,7 @@ tr.undone .strike{text-decoration:line-through}
     <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" maxlength="8">
     <div class="login-err" id="loginErr"></div>
     <button class="btn primary" id="loginBtn" style="width:100%">Είσοδος</button>
+    <div class="muted" id="appVersion" style="font-size:12px;margin-top:18px"></div>
   </div>
 </section>
 
@@ -306,6 +307,10 @@ var DEFAULT_EMPLOYEE_PIN = "10007";
 
 /* Κάτω από αυτή την ποσότητα ένα μέγεθος εμφανίζεται ως "χαμηλό". */
 var LOW_STOCK = 2;
+
+/* Έκδοση: εμφανίζεται κάτω από το κουμπί Είσοδος, ώστε να φαίνεται αμέσως
+   αν ο browser / το GitHub Pages σερβίρει την τελευταία έκδοση ή παλιά από cache. */
+var APP_VERSION = "v3 · 14/11 18:45";
 
 var LS_ROLE = "arches.role"; /* localStorage key: κάθε συσκευή θυμάται τον ρόλο της */
 
@@ -1292,6 +1297,7 @@ function injectResponsiveHelpers(){
 }
 
 function boot(){
+  $("appVersion").textContent = APP_VERSION;
   injectResponsiveHelpers();
   bindEvents();
   initFirebase();
