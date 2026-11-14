@@ -375,7 +375,7 @@ var LOW_STOCK = 2;
 
 /* Έκδοση: εμφανίζεται κάτω από το κουμπί Είσοδος, ώστε να φαίνεται αμέσως
    αν ο browser / το GitHub Pages σερβίρει την τελευταία έκδοση ή παλιά από cache. */
-var APP_VERSION = "v7 · 14/11 19:45";
+var APP_VERSION = "v8 · 14/11 19:50";
 
 var LS_ROLE = "arches.role"; /* localStorage key: κάθε συσκευή θυμάται τον ρόλο της */
 
@@ -710,6 +710,7 @@ function recordSale(productId, size, qty){
     productId: productId,
     productName: p ? p.name : "",   /* snapshot του ονόματος: η αναφορά μένει σωστή κι αν σβηστεί/μετονομαστεί το προϊόν */
     productCode: p ? (p.code || "") : "",
+    productColor: p ? (p.color || "") : "",
     productCategory: p ? (p.category || "") : "",
     size: size,
     qty: qty,
@@ -822,10 +823,10 @@ function saveProduct(id, data, baseSizes){
   if (!db) {
     if (id) {
       var p = findProduct(id);
-      p.name = data.name; p.code = data.code; p.category = data.category; p.photo = data.photo;
+      p.name = data.name; p.code = data.code; p.color = data.color; p.category = data.category; p.photo = data.photo;
       p.sizes = merge(p.sizes || []); p.ts = Date.now();
     } else {
-      products.push({ id: newId(), name: data.name, code: data.code, category: data.category, photo: data.photo, sizes: merge([]), ts: Date.now() });
+      products.push({ id: newId(), name: data.name, code: data.code, color: data.color, category: data.category, photo: data.photo, sizes: merge([]), ts: Date.now() });
       products.sort(function(a,b){ return a.name.localeCompare(b.name, "el"); });
     }
     renderAll();
@@ -834,7 +835,7 @@ function saveProduct(id, data, baseSizes){
 
   if (!id) {
     return productsCol().doc().set({
-      name: data.name, code: data.code, category: data.category, photo: data.photo,
+      name: data.name, code: data.code, color: data.color, category: data.category, photo: data.photo,
       sizes: merge([]), ts: Date.now(), createdTs: Date.now()
     });
   }
@@ -843,7 +844,7 @@ function saveProduct(id, data, baseSizes){
     return t.get(ref).then(function(doc){
       var cur = doc.exists ? (doc.data().sizes || []) : [];
       t.set(ref, {
-        name: data.name, code: data.code, category: data.category, photo: data.photo,
+        name: data.name, code: data.code, color: data.color, category: data.category, photo: data.photo,
         sizes: merge(cur), ts: Date.now()
       }, { merge: true });
     });
@@ -907,7 +908,7 @@ function draftLines(){
     var cut = k.indexOf("|"), pid = k.slice(0, cut), size = k.slice(cut + 1);
     var p = findProduct(pid);
     if (!p || !(draft.lines[k] > 0)) continue;
-    out.push({ productId: pid, name: p.name, code: p.code || "", category: p.category || "", size: size, qty: draft.lines[k] });
+    out.push({ productId: pid, name: p.name, code: p.code || "", color: p.color || "", category: p.category || "", size: size, qty: draft.lines[k] });
   }
   return out;
 }
@@ -1072,6 +1073,7 @@ function matchesSearch(p){
   var q = search.toLowerCase();
   return (p.name || "").toLowerCase().indexOf(q) >= 0 ||
          (p.code || "").toLowerCase().indexOf(q) >= 0 ||
+         (p.color || "").toLowerCase().indexOf(q) >= 0 ||
          (p.category || "").toLowerCase().indexOf(q) >= 0;
 }
 
@@ -1104,7 +1106,7 @@ function searchBox(placeholder){
 /* ---------- Πώληση ---------- */
 function renderSell(){
   var h = '<div class="row"><h2>Πώληση</h2><span class="spacer"></span><span class="muted">Βάρδια: ' + esc(dayLabel(currentDay)) + '</span></div>';
-  h += searchBox("Αναζήτηση ρούχου ή κωδικού στάμπας…") + catBar();
+  h += searchBox("Αναζήτηση: τίτλος, κωδικός στάμπας, χρώμα…") + catBar();
   var list = products.filter(matchesSearch);
   if (!products.length) return h + '<div class="card empty" style="margin-top:16px">Δεν υπάρχουν ακόμα ρούχα. ' + (role === "owner" ? 'Προσθέστε από την καρτέλα «Απόθεμα».' : 'Ο ιδιοκτήτης πρέπει να τα προσθέσει.') + '</div>';
   if (!list.length) return h + '<div class="empty">Κανένα αποτέλεσμα.</div>';
@@ -1112,7 +1114,7 @@ function renderSell(){
   for (var i = 0; i < list.length; i++) {
     var p = list[i];
     h += '<div class="card prod"><div class="photo">' + photoHtml(p, "") + '</div><div class="body"><div class="name">' + esc(p.name) + '</div>';
-    h += '<div class="meta">' + esc([p.code, p.category].filter(Boolean).join(" · ") || " ") + '</div><div class="sizes">';
+    h += '<div class="meta">' + esc([p.code, p.color, p.category].filter(Boolean).join(" · ") || " ") + '</div><div class="sizes">';
     var sz = p.sizes || [];
     if (!sz.length) h += '<span class="muted">Χωρίς μεγέθη</span>';
     for (var j = 0; j < sz.length; j++) {
@@ -1131,7 +1133,7 @@ function openSellModal(pid, size){
   var max = sizeQty(p, size), qty = 1;
   function body(){
     return '<div class="card pad modal">' +
-      '<h3>' + esc(p.name) + '</h3><div class="muted">Μέγεθος <b>' + esc(size) + '</b> · διαθέσιμα ' + max + '</div>' +
+      '<h3>' + esc(p.name) + '</h3>' + (p.color ? '<div class="muted">Χρώμα: ' + esc(p.color) + '</div>' : '') + '<div class="muted">Μέγεθος <b>' + esc(size) + '</b> · διαθέσιμα ' + max + '</div>' +
       '<div class="qty"><button class="btn" data-q="-1">−</button><span class="v">' + qty + '</span><button class="btn" data-q="1">+</button></div>' +
       '<div class="row"><button class="btn" data-close>Ακύρωση</button><span class="spacer"></span>' +
       '<button class="btn primary" data-confirm>Καταχώριση πώλησης</button></div></div>';
@@ -1165,9 +1167,9 @@ function renderShift(){
     var s = todaySales[i], key = "sh" + s.id, open = openRows[key];
     h += '<tr data-row="' + key + '" class="' + (s.undone ? 'undone ' : '') + (open ? 'open' : '') + '">' +
       '<td class="primary"><span class="exp-toggle">' + (open ? '▴' : '▾') + '</span>' + timeLabel(s.ts) +
-      '<span class="m-only"> · <span class="strike">' + esc(s.productName) + ' — ' + esc(s.size) + ' × ' + s.qty + '</span></span>' +
+      '<span class="m-only"> · <span class="strike">' + esc(saleLabel(s)) + ' — ' + esc(s.size) + ' × ' + s.qty + '</span></span>' +
       (s.undone ? ' <span class="star">*</span>' : '') + '</td>' +
-      '<td class="d-only strike">' + esc(s.productName) + '</td>' +
+      '<td class="d-only strike">' + esc(saleLabel(s)) + '</td>' +
       '<td class="d-only strike">' + esc(s.size) + '</td><td class="num d-only strike">' + s.qty + '</td>' +
       '<td class="num act">' + (s.undone
         ? '<span class="muted">Αναιρέθηκε ' + timeLabel(s.undoneTs) + '</span>'
@@ -1177,6 +1179,10 @@ function renderShift(){
   h += '<p class="muted" style="font-size:13px"><span class="star">*</span> Οι αναιρέσεις επιστρέφουν το τεμάχιο στο απόθεμα και εμφανίζονται στον ιδιοκτήτη.</p>';
   return h;
 }
+
+/* Ετικέτα πώλησης: Διακριτικός Τίτλος + χρώμα (το ίδιο σχέδιο μπορεί να
+   υπάρχει σε πολλά χρώματα ως ξεχωριστά προϊόντα). */
+function saleLabel(s){ return s.productName + (s.productColor ? " · " + s.productColor : ""); }
 
 function statsBlock(sales){
   var items = 0, lines = 0, undos = 0;
@@ -1211,7 +1217,7 @@ function renderReport(){
       /* Κατηγορία: προτιμάμε την τρέχουσα του προϊόντος (αν άλλαξε μετά),
          αλλιώς το snapshot που κρατήθηκε τη στιγμή της πώλησης. */
       var cp = findProduct(s.productId);
-      groups[k] = { name: s.productName, code: s.productCode, size: s.size, qty: 0, cat: (cp ? cp.category : s.productCategory) || "" };
+      groups[k] = { name: s.productName, code: s.productCode, color: (cp ? cp.color : s.productColor) || "", size: s.size, qty: 0, cat: (cp ? cp.category : s.productCategory) || "" };
       order.push(k);
     }
     groups[k].qty += s.qty;
@@ -1236,7 +1242,7 @@ function renderReport(){
       lastCat = r.cat;
       h += '<tr class="cat-head"><td colspan="2">' + esc(r.cat || "Χωρίς κατηγορία") + '</td><td class="num">' + catTotals[r.cat] + '</td></tr>';
     }
-    h += '<tr><td>' + esc(r.name) + (r.code ? ' <span class="muted">' + esc(r.code) + '</span>' : '') + '</td><td>' + esc(r.size) + '</td><td class="num"><b>' + r.qty + '</b></td></tr>';
+    h += '<tr><td>' + esc(r.name) + (r.code || r.color ? ' <span class="muted">' + esc([r.code, r.color].filter(Boolean).join(" · ")) + '</span>' : '') + '</td><td>' + esc(r.size) + '</td><td class="num"><b>' + r.qty + '</b></td></tr>';
   }
   h += '</tbody></table></div>';
 
@@ -1247,9 +1253,9 @@ function renderReport(){
     var x = reportSales[j], key = "rp" + x.id, open = openRows[key];
     h += '<tr data-row="' + key + '" class="' + (x.undone ? 'undone ' : '') + (open ? 'open' : '') + '">' +
       '<td class="primary"><span class="exp-toggle">' + (open ? '▴' : '▾') + '</span>' + timeLabel(x.ts) +
-      '<span class="m-only"> · <span class="strike">' + esc(x.productName) + ' — ' + esc(x.size) + ' × ' + x.qty + '</span></span>' +
+      '<span class="m-only"> · <span class="strike">' + esc(saleLabel(x)) + ' — ' + esc(x.size) + ' × ' + x.qty + '</span></span>' +
       (x.undone ? ' <span class="star">*</span>' : '') + '</td>' +
-      '<td data-l="Ρούχο" class="d-only strike">' + esc(x.productName) + '</td>' +
+      '<td data-l="Ρούχο" class="d-only strike">' + esc(saleLabel(x)) + '</td>' +
       '<td data-l="Μέγεθος" class="d-only strike">' + esc(x.size) + '</td>' +
       '<td data-l="Τμχ" class="num d-only strike">' + x.qty + '</td>' +
       '<td data-l="Από">' + (x.by === "owner" ? "Ιδιοκτήτης" : "Υπάλληλος") + '</td>' +
@@ -1264,16 +1270,17 @@ function renderStock(){
   for (var i = 0; i < products.length; i++) total += totalStock(products[i]);
   var h = '<div class="row"><h2>Απόθεμα</h2><span class="spacer"></span><span class="muted">' + products.length + ' είδη · ' + total + ' τεμάχια</span>' +
           '<button class="btn primary" data-new>+ Νέο ρούχο</button></div>';
-  h += searchBox("Αναζήτηση ρούχου ή κωδικού στάμπας…") + catBar();
+  h += searchBox("Αναζήτηση: τίτλος, κωδικός στάμπας, χρώμα…") + catBar();
   var list = products.filter(matchesSearch);
   if (!list.length) return h + '<div class="card empty" style="margin-top:16px">' + (products.length ? 'Κανένα αποτέλεσμα.' : 'Δεν υπάρχουν ακόμα ρούχα. Πατήστε «Νέο ρούχο».') + '</div>';
-  h += '<div class="card" style="margin-top:16px"><table class="t cards"><thead><tr><th>Ρούχο</th><th>Κωδ. Στάμπας</th><th>Κατηγορία</th><th>Μεγέθη (απόθεμα)</th><th class="num">Σύνολο</th><th></th></tr></thead><tbody>';
+  h += '<div class="card" style="margin-top:16px"><table class="t cards"><thead><tr><th>Διακριτικός Τίτλος</th><th>Κωδ. Στάμπας</th><th>Χρώμα</th><th>Κατηγορία</th><th>Μεγέθη (απόθεμα)</th><th class="num">Σύνολο</th><th></th></tr></thead><tbody>';
   for (var j = 0; j < list.length; j++) {
     var p = list[j], key = "st" + p.id, open = openRows[key], sz = p.sizes || [], chips = "";
     for (var k = 0; k < sz.length; k++) chips += '<span class="chip' + (sz[k].q <= 0 ? ' zero' : '') + '">' + esc(sz[k].s) + ' · ' + sz[k].q + '</span>';
     h += '<tr data-row="' + key + '"' + (open ? ' class="open"' : '') + '>' +
       '<td class="primary"><span class="exp-toggle">' + (open ? '▴' : '▾') + '</span><div class="cell-flex">' + photoHtml(p, "thumb") + '<div><b>' + esc(p.name) + '</b><span class="m-only muted"> · ' + totalStock(p) + ' τμχ</span></div></div></td>' +
       '<td data-l="Κωδ. Στάμπας">' + esc(p.code || "—") + '</td>' +
+      '<td data-l="Χρώμα">' + esc(p.color || "—") + '</td>' +
       '<td data-l="Κατηγορία">' + esc(p.category || "—") + '</td>' +
       '<td class="act">' + (chips || '<span class="muted">—</span>') + '</td>' +
       '<td data-l="Σύνολο" class="num d-only">' + totalStock(p) + '</td>' +
@@ -1337,9 +1344,13 @@ function openProductModal(id){
     return '<div class="card pad modal">' +
       '<h3>' + (p ? 'Επεξεργασία ρούχου' : 'Νέο ρούχο') + '</h3>' +
       '<div class="photo-field" id="photoField" style="margin-top:14px">' + photoFieldHtml() + '</div>' +
-      '<div style="margin:0 0 14px"><label class="f">Όνομα *</label><input type="text" id="fName" value="' + esc(p ? p.name : "") + '"></div>' +
+      /* Το πεδίο στο Firestore μένει "name" (όχι μετονομασία σε "title"):
+         έτσι τα ρούχα και οι πωλήσεις που έχουν ήδη περαστεί συνεχίζουν να
+         δουλεύουν χωρίς μετατροπή δεδομένων. Αλλάζει μόνο η ετικέτα. */
+      '<div style="margin:0 0 14px"><label class="f">Διακριτικός Τίτλος *</label><input type="text" id="fName" value="' + esc(p ? p.name : "") + '"></div>' +
       '<div class="row" style="margin-bottom:14px;flex-wrap:nowrap"><div style="flex:1"><label class="f">Κωδικός Στάμπας</label><input type="text" id="fCode" value="' + esc(p ? p.code || "" : "") + '"></div>' +
-      '<div style="flex:1"><label class="f">Κατηγορία *</label><select id="fCat">' + catOptions() + '</select></div></div>' +
+      '<div style="flex:1"><label class="f">Χρώμα</label><input type="text" id="fColor" value="' + esc(p ? p.color || "" : "") + '" placeholder="π.χ. Μαύρο"></div></div>' +
+      '<div style="margin-bottom:14px"><label class="f">Κατηγορία *</label><select id="fCat">' + catOptions() + '</select></div>' +
       '<label class="f">Μεγέθη & απόθεμα</label><div class="size-rows" id="sizeRows">' + sizeRowsHtml() + '</div>' +
       '<button class="btn small" data-add>+ Μέγεθος</button>' +
       (p ? '<p class="muted" style="font-size:12px">Αν γίνει πώληση ενώ η φόρμα είναι ανοιχτή, δεν χάνεται: αποθηκεύεται μόνο η αλλαγή που κάνατε εσείς.</p>' : '') +
@@ -1404,7 +1415,7 @@ function openProductModal(id){
         seen[rows[i].s] = true; clean.push(rows[i]);
       }
       t.disabled = true;
-      saveProduct(p ? p.id : null, { name: name, code: $("fCode").value.trim(), category: cat, photo: photo, sizes: clean }, base)
+      saveProduct(p ? p.id : null, { name: name, code: $("fCode").value.trim(), color: $("fColor").value.trim(), category: cat, photo: photo, sizes: clean }, base)
         .then(function(){ closeModal(); showOk("Αποθηκεύτηκε."); }, function(err){ t.disabled = false; showError("Αποθήκευση", err); });
     }
   };
@@ -1505,7 +1516,7 @@ function renderOrder(){
       ls.sort(function(a,b){ return sizeRank(a.size) - sizeRank(b.size); });
       for (var li = 0; li < ls.length; li++) { tot += ls[li].qty; chips += '<span class="chip">' + esc(ls[li].size) + ' × ' + ls[li].qty + '</span>'; }
       h += '<div class="basket-line">' + photoHtml(p0, "thumb") + '<div style="flex:1"><b>' + esc(ls[0].name) + '</b>' +
-        (ls[0].code ? ' <span class="muted">' + esc(ls[0].code) + '</span>' : '') + '<div>' + chips + '</div></div>' +
+        (ls[0].code || ls[0].color ? ' <span class="muted">' + esc([ls[0].code, ls[0].color].filter(Boolean).join(" · ")) + '</span>' : '') + '<div>' + chips + '</div></div>' +
         '<b>' + tot + '</b><button class="btn small" data-ordclear="' + esc(prodOrder[pi]) + '" title="Αφαίρεση από το καλάθι">×</button></div>';
     }
     h += '<div class="row" style="margin-top:10px"><span class="spacer"></span><button class="btn small danger" data-ordempty>Άδειασμα καλαθιού</button></div></div>';
@@ -1513,7 +1524,7 @@ function renderOrder(){
   h += '</div>';
 
   /* Λίστα προϊόντων με απόθεμα + ποσότητα προς παραγγελία */
-  h += '<h3>Προσθήκη στο καλάθι</h3>' + searchBox("Αναζήτηση ρούχου ή κωδικού στάμπας…") + catBar();
+  h += '<h3>Προσθήκη στο καλάθι</h3>' + searchBox("Αναζήτηση: τίτλος, κωδικός στάμπας, χρώμα…") + catBar();
   var list = products.filter(matchesSearch);
   if (!list.length) {
     h += '<div class="card empty" style="margin-top:12px">' + (products.length ? 'Κανένα αποτέλεσμα.' : 'Δεν υπάρχουν ακόμα ρούχα στο Απόθεμα.') + '</div>';
@@ -1531,7 +1542,7 @@ function renderOrder(){
           '<button data-oq="' + esc(p.id) + '" data-os="' + esc(s) + '" data-d="1" aria-label="περισσότερα">+</button></div></div>';
       }
       h += '<div class="ord-prod' + (has ? ' has' : '') + '">' + photoHtml(p, "thumb") +
-        '<div><b>' + esc(p.name) + '</b> <span class="muted">' + esc([p.code, p.category].filter(Boolean).join(" · ")) +
+        '<div><b>' + esc(p.name) + '</b> <span class="muted">' + esc([p.code, p.color, p.category].filter(Boolean).join(" · ")) +
         ' · σύνολο αποθέματος ' + totalStock(p) + '</span><div class="ord-sizes">' + cells + '</div></div></div>';
     }
     h += '</div>';
@@ -1566,7 +1577,15 @@ function buildOrderDoc(order, isDraft){
     var c = lines[i].category || "Χωρίς κατηγορία";
     if (!cats[c]) { cats[c] = { prods: {}, prodOrder: [], sizes: {}, sizeList: [] }; catOrder.push(c); }
     var g = cats[c], pid = lines[i].productId;
-    if (!g.prods[pid]) { g.prods[pid] = { name: lines[i].name, code: lines[i].code, q: {}, tot: 0 }; g.prodOrder.push(pid); }
+    /* Το όνομα (Διακριτικός Τίτλος) ΔΕΝ πάει στον προμηθευτή — είναι
+       εσωτερικό του καταστήματος. Ο προμηθευτής αναγνωρίζει το είδος από
+       Κωδικό Στάμπας + Χρώμα (+ φωτογραφία). Το παλιό όνομα κρατιέται μόνο
+       για τις γραμμές στην οθόνη, όχι στο PDF. */
+    if (!g.prods[pid]) {
+      var curP = findProduct(pid);
+      g.prods[pid] = { code: lines[i].code || "", color: lines[i].color || (curP && !lines[i].hasOwnProperty("color") ? curP.color || "" : ""), q: {}, tot: 0 };
+      g.prodOrder.push(pid);
+    }
     g.prods[pid].q[lines[i].size] = (g.prods[pid].q[lines[i].size] || 0) + lines[i].qty;
     g.prods[pid].tot += lines[i].qty;
     if (!g.sizes[lines[i].size]) { g.sizes[lines[i].size] = 1; g.sizeList.push(lines[i].size); }
@@ -1593,15 +1612,17 @@ function buildOrderDoc(order, isDraft){
   for (var ci = 0; ci < catOrder.length; ci++) {
     var cg = cats[catOrder[ci]];
     cg.sizeList.sort(function(a,b){ return (sizeRank(a) - sizeRank(b)) || String(a).localeCompare(String(b)); });
-    cg.prodOrder.sort(function(a,b){ return cg.prods[a].name.localeCompare(cg.prods[b].name, "el"); });
-    h += '<h3>' + esc(catOrder[ci]) + '</h3><table><thead><tr><th></th><th>Ρούχο</th><th>Κωδ. Στάμπας</th>';
+    cg.prodOrder.sort(function(a,b){
+      return cg.prods[a].code.localeCompare(cg.prods[b].code, "el", { numeric: true }) || cg.prods[a].color.localeCompare(cg.prods[b].color, "el");
+    });
+    h += '<h3>' + esc(catOrder[ci]) + '</h3><table><thead><tr><th></th><th>Κωδ. Στάμπας</th><th>Χρώμα</th>';
     for (var si = 0; si < cg.sizeList.length; si++) h += '<th class="q">' + esc(cg.sizeList[si]) + '</th>';
     h += '<th class="tot">Σύνολο</th></tr></thead><tbody>';
     var colTot = {}, catTot = 0;
     for (var pj = 0; pj < cg.prodOrder.length; pj++) {
       var pr = cg.prods[cg.prodOrder[pj]], cur = findProduct(cg.prodOrder[pj]);
       h += '<tr><td class="ph">' + (cur && cur.photo ? '<img src="' + cur.photo + '" alt="">' : '') + '</td>' +
-        '<td>' + esc(pr.name) + '</td><td>' + esc(pr.code || "—") + '</td>';
+        '<td>' + esc(pr.code || "—") + '</td><td>' + esc(pr.color || "—") + '</td>';
       for (var sk = 0; sk < cg.sizeList.length; sk++) {
         var qv = pr.q[cg.sizeList[sk]] || 0;
         colTot[cg.sizeList[sk]] = (colTot[cg.sizeList[sk]] || 0) + qv;
