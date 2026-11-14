@@ -1039,6 +1039,11 @@ function renderStock(){
 }
 
 function openProductModal(id){
+  /* Μόνο ο ιδιοκτήτης προσθέτει/αλλάζει ρούχα και φωτογραφίες. Ο υπάλληλος
+     δεν βλέπει καν την καρτέλα «Απόθεμα»· ο έλεγχος εδώ είναι δεύτερη
+     δικλίδα σε περίπτωση που κάποιο κουμπί εμφανιστεί κατά λάθος σε άλλη
+     οθόνη. (UI-level, όχι security boundary — βλ. ADMIN_PIN.) */
+  if (role !== "owner") return;
   var p = id ? findProduct(id) : null;
   var rows = p ? cloneSizes(p.sizes) : [{ s: "S", q: 0 }, { s: "M", q: 0 }, { s: "L", q: 0 }];
   /* baseSizes: οι ποσότητες τη στιγμή που άνοιξε η φόρμα (βλ. saveProduct). */
