@@ -310,7 +310,7 @@ var LOW_STOCK = 2;
 
 /* Έκδοση: εμφανίζεται κάτω από το κουμπί Είσοδος, ώστε να φαίνεται αμέσως
    αν ο browser / το GitHub Pages σερβίρει την τελευταία έκδοση ή παλιά από cache. */
-var APP_VERSION = "v3 · 14/11 18:45";
+var APP_VERSION = "v4 · 14/11 19:00";
 
 var LS_ROLE = "arches.role"; /* localStorage key: κάθε συσκευή θυμάται τον ρόλο της */
 
@@ -326,6 +326,27 @@ var CATEGORIES = ["Ρούχα Ενηλίκων", "Βρεφικά", "Παιδικ
    Tradeoff: κάθε doc έχει όριο 1MB και ο listener των products φέρνει όλες
    τις φωτογραφίες σε κάθε φόρτωση — γι' αυτό τις συμπιέζουμε σε ~400px,
    που φτάνει για να αναγνωρίζει ο υπάλληλος το ρούχο (~20-40KB η καθεμία). */
+/* Προεπιλεγμένα μεγέθη ανά κατηγορία, με τη ΣΩΣΤΗ σειρά (XS→3XL).
+   Χρησιμοποιούνται (α) για να γεμίζει αυτόματα η φόρμα νέου ρούχου και
+   (β) για ταξινόμηση μεγεθών στην αναφορά — αλφαβητικά το "L" θα έβγαινε
+   πριν το "M" και το "2XL" πρώτο απ' όλα. Κατηγορίες χωρίς λίστα εδώ
+   ξεκινούν με κενή φόρμα και ο ιδιοκτήτης γράφει ό,τι μεγέθη θέλει. */
+var CATEGORY_SIZES = {
+  "Ρούχα Ενηλίκων": ["XS", "S", "M", "L", "XL", "2XL", "3XL"]
+};
+
+/* Σειρά ενός μεγέθους για ταξινόμηση: πρώτα βάσει των λιστών παραπάνω,
+   μετά αριθμητικά (π.χ. 30/32/34), αλλιώς στο τέλος. */
+function sizeRank(size){
+  for (var c in CATEGORY_SIZES) {
+    if (!CATEGORY_SIZES.hasOwnProperty(c)) continue;
+    var i = CATEGORY_SIZES[c].indexOf(size);
+    if (i >= 0) return i;
+  }
+  var n = parseFloat(size);
+  return isNaN(n) ? 1000 : 100 + n;
+}
+
 var PHOTO_MAX_PX = 400;
 var PHOTO_QUALITY = 0.72;
 var PHOTO_MAX_BYTES = 300000; /* δικλίδα ασφαλείας πολύ κάτω από το όριο 1MB */
@@ -982,6 +1003,7 @@ function renderReport(){
   order.sort(function(a,b){
     return (catIdx(groups[a].cat) - catIdx(groups[b].cat)) ||
            groups[a].name.localeCompare(groups[b].name, "el") ||
+           (sizeRank(groups[a].size) - sizeRank(groups[b].size)) ||
            String(groups[a].size).localeCompare(String(groups[b].size));
   });
 
@@ -1050,7 +1072,7 @@ function openProductModal(id){
      οθόνη. (UI-level, όχι security boundary — βλ. ADMIN_PIN.) */
   if (role !== "owner") return;
   var p = id ? findProduct(id) : null;
-  var rows = p ? cloneSizes(p.sizes) : [{ s: "S", q: 0 }, { s: "M", q: 0 }, { s: "L", q: 0 }];
+  var rows = p ? cloneSizes(p.sizes) : [];
   /* baseSizes: οι ποσότητες τη στιγμή που άνοιξε η φόρμα (βλ. saveProduct). */
   var base = {};
   if (p) for (var i = 0; i < rows.length; i++) base[rows[i].s] = rows[i].q;
@@ -1058,6 +1080,16 @@ function openProductModal(id){
   /* Νέο ρούχο: προεπιλογή η κατηγορία που είναι επιλεγμένη στο φίλτρο,
      γιατί συνήθως ο ιδιοκτήτης περνάει πολλά ρούχα της ίδιας κατηγορίας. */
   var cat = p ? (p.category || "") : (CATEGORIES.indexOf(catFilter) >= 0 ? catFilter : "");
+  if (!p) rows = presetRows(cat);
+
+  /* Γραμμές μεγεθών για μια κατηγορία (ποσότητα 0). Χωρίς προεπιλογή →
+     μία κενή γραμμή για να γράψει ο ιδιοκτήτης. */
+  function presetRows(c){
+    var list = CATEGORY_SIZES[c], out = [];
+    if (!list) return [{ s: "", q: 0 }];
+    for (var i = 0; i < list.length; i++) out.push({ s: list[i], q: 0 });
+    return out;
+  }
 
   function catOptions(){
     var h = '<option value="">— Επιλέξτε —</option>';
@@ -1110,6 +1142,17 @@ function openProductModal(id){
 
   var m = openModal(body());
   m.onchange = function(e){
+    /* Αλλαγή κατηγορίας: ξαναγεμίζουμε τα μεγέθη ΜΟΝΟ αν δεν έχει μπει
+       ακόμα καμία ποσότητα — αλλιώς θα σβήναμε απόθεμα που πληκτρολόγησε
+       ή που ήδη υπάρχει. */
+    if (e.target.id === "fCat") {
+      readRows();
+      var anyQty = false;
+      for (var i = 0; i < rows.length; i++) if (rows[i].q > 0) anyQty = true;
+      cat = e.target.value;
+      if (!anyQty) { rows = presetRows(cat); $("sizeRows").innerHTML = sizeRowsHtml(); }
+      return;
+    }
     if (e.target.id !== "fPhoto" || !e.target.files || !e.target.files[0]) return;
     $("photoField").querySelector(".photo").innerHTML = '<span class="muted" style="font-size:12px">Επεξεργασία…</span>';
     resizePhoto(e.target.files[0]).then(function(url){
