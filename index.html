@@ -146,6 +146,28 @@ label.f{display:block;font-size:13px;color:var(--ink-2);margin:0 0 4px}
 .size.zero{opacity:.4;cursor:not-allowed}
 .size.low .q{color:var(--warn)}
 
+/* ---------- Φωτογραφίες ---------- */
+/* Λόγος 4:5 (πορτρέτο) γιατί έτσι φωτογραφίζονται συνήθως τα ρούχα·
+   object-fit:contain ώστε να μην κόβεται το ρούχο σε οριζόντιες φωτό. */
+.prod{padding:0;overflow:hidden;display:flex;flex-direction:column}
+.prod .body{padding:14px}
+.photo{aspect-ratio:4/5;background:var(--surface-2);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.photo img{width:100%;height:100%;object-fit:contain;display:block}
+.photo .ph{font-family:var(--font-serif);color:var(--ink-3);font-size:32px}
+.thumb{width:44px;height:55px;border-radius:6px;background:var(--surface-2);object-fit:contain;display:block}
+.thumb.ph{display:flex;align-items:center;justify-content:center;color:var(--ink-3);font-family:var(--font-serif)}
+.photo-field{display:flex;gap:12px;align-items:center;margin-bottom:14px}
+.photo-field .photo{width:96px;flex:none;border-radius:var(--radius-sm)}
+.cell-flex{display:flex;gap:10px;align-items:center}
+
+/* ---------- Φίλτρο κατηγοριών ---------- */
+.cats{display:flex;gap:6px;overflow-x:auto;padding:12px 0 2px;-webkit-overflow-scrolling:touch}
+.cats button{white-space:nowrap;padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:var(--surface);cursor:pointer;font-size:14px}
+.cats button.sel{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.cats .n{opacity:.6;font-size:12px;margin-left:4px}
+select{padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);min-height:42px;width:100%}
+tr.cat-head td{background:var(--surface-2);font-family:var(--font-serif);font-size:15px;padding:8px 12px}
+
 /* ---------- Πίνακες / λίστες ---------- */
 table.t{width:100%;border-collapse:collapse}
 table.t th,table.t td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
@@ -184,7 +206,12 @@ tr.undone .strike{text-decoration:line-through}
   .logo{height:30px}
   nav.tabs{padding:0 8px}
   main{padding:14px}
-  .prod-grid{grid-template-columns:1fr}
+  /* Σε κινητό: 2 στήλες με φωτογραφία, ώστε να βλέπει ο υπάλληλος
+     περισσότερα ρούχα ανά οθόνη και να τα αναγνωρίζει από την εικόνα. */
+  .prod-grid{grid-template-columns:1fr 1fr;gap:8px}
+  .prod .body{padding:10px}
+  .prod .name{font-size:15px}
+  .size{min-width:44px;padding:6px 4px}
   .stats{grid-template-columns:1fr 1fr 1fr;gap:8px}
   .stat{padding:10px}
   .stat .v{font-size:22px}
@@ -282,6 +309,22 @@ var LOW_STOCK = 2;
 
 var LS_ROLE = "arches.role"; /* localStorage key: κάθε συσκευή θυμάται τον ρόλο της */
 
+/* Σταθερές κατηγορίες καταστήματος. Είναι λίστα στον κώδικα (όχι ελεύθερο
+   κείμενο) ώστε να μη δημιουργούνται "Φούτερ" / "φουτερ" / "Φουτερ" ως
+   τρεις διαφορετικές κατηγορίες στα φίλτρα και στην αναφορά. Η σειρά εδώ
+   είναι και η σειρά εμφάνισης παντού. */
+var CATEGORIES = ["Ρούχα Ενηλίκων", "Βρεφικά", "Παιδικά", "Ζακέτες", "Φούτερ"];
+
+/* Φωτογραφία προϊόντος: αποθηκεύεται ΜΕΣΑ στο Firestore doc ως μικρό JPEG
+   (data URL), ΟΧΙ στο Firebase Storage. Λόγοι: (α) το Storage πλέον απαιτεί
+   πληρωμένο Blaze plan, (β) δεν χρειάζεται δεύτερη υπηρεσία/rules.
+   Tradeoff: κάθε doc έχει όριο 1MB και ο listener των products φέρνει όλες
+   τις φωτογραφίες σε κάθε φόρτωση — γι' αυτό τις συμπιέζουμε σε ~400px,
+   που φτάνει για να αναγνωρίζει ο υπάλληλος το ρούχο (~20-40KB η καθεμία). */
+var PHOTO_MAX_PX = 400;
+var PHOTO_QUALITY = 0.72;
+var PHOTO_MAX_BYTES = 300000; /* δικλίδα ασφαλείας πολύ κάτω από το όριο 1MB */
+
 
 /* ==========================================================================
    2. STATE (in-memory)
@@ -302,7 +345,8 @@ var tab = null;
 var currentDay = dayKey(new Date());
 var reportDay = currentDay;
 var search = "";
-var openRows = {};        /* ποιες compact κάρτες είναι ανοιχτές σε mobile */
+var catFilter = "";       /* "" = όλες οι κατηγορίες */
+var openRows = {};       /* ποιες compact κάρτες είναι ανοιχτές σε mobile */
 
 var unsubToday = null;
 var unsubReport = null;
@@ -543,6 +587,7 @@ function recordSale(productId, size, qty){
     productId: productId,
     productName: p ? p.name : "",   /* snapshot του ονόματος: η αναφορά μένει σωστή κι αν σβηστεί/μετονομαστεί το προϊόν */
     productCode: p ? (p.code || "") : "",
+    productCategory: p ? (p.category || "") : "",
     size: size,
     qty: qty,
     day: currentDay,
@@ -654,10 +699,10 @@ function saveProduct(id, data, baseSizes){
   if (!db) {
     if (id) {
       var p = findProduct(id);
-      p.name = data.name; p.code = data.code; p.category = data.category;
+      p.name = data.name; p.code = data.code; p.category = data.category; p.photo = data.photo;
       p.sizes = merge(p.sizes || []); p.ts = Date.now();
     } else {
-      products.push({ id: newId(), name: data.name, code: data.code, category: data.category, sizes: merge([]), ts: Date.now() });
+      products.push({ id: newId(), name: data.name, code: data.code, category: data.category, photo: data.photo, sizes: merge([]), ts: Date.now() });
       products.sort(function(a,b){ return a.name.localeCompare(b.name, "el"); });
     }
     renderAll();
@@ -666,7 +711,7 @@ function saveProduct(id, data, baseSizes){
 
   if (!id) {
     return productsCol().doc().set({
-      name: data.name, code: data.code, category: data.category,
+      name: data.name, code: data.code, category: data.category, photo: data.photo,
       sizes: merge([]), ts: Date.now(), createdTs: Date.now()
     });
   }
@@ -675,7 +720,7 @@ function saveProduct(id, data, baseSizes){
     return t.get(ref).then(function(doc){
       var cur = doc.exists ? (doc.data().sizes || []) : [];
       t.set(ref, {
-        name: data.name, code: data.code, category: data.category,
+        name: data.name, code: data.code, category: data.category, photo: data.photo,
         sizes: merge(cur), ts: Date.now()
       }, { merge: true });
     });
@@ -778,11 +823,35 @@ function renderAll(){
 }
 
 function matchesSearch(p){
+  if (catFilter === "__none") { if (CATEGORIES.indexOf(p.category) >= 0) return false; }
+  else if (catFilter && p.category !== catFilter) return false;
   if (!search) return true;
   var q = search.toLowerCase();
   return (p.name || "").toLowerCase().indexOf(q) >= 0 ||
          (p.code || "").toLowerCase().indexOf(q) >= 0 ||
          (p.category || "").toLowerCase().indexOf(q) >= 0;
+}
+
+/* Κουμπιά-φίλτρα κατηγοριών με πλήθος ειδών. Η "Χωρίς κατηγορία"
+   εμφανίζεται μόνο αν υπάρχουν τέτοια είδη (π.χ. παλιά εγγραφή), ώστε
+   να μην "χάνονται" ρούχα που δεν πέφτουν σε καμία από τις 5. */
+function catBar(){
+  var counts = {}, none = 0;
+  for (var i = 0; i < products.length; i++) {
+    var c = products[i].category;
+    if (CATEGORIES.indexOf(c) >= 0) counts[c] = (counts[c] || 0) + 1; else none++;
+  }
+  var h = '<div class="cats"><button data-cat=""' + (catFilter === "" ? ' class="sel"' : '') + '>Όλα<span class="n">' + products.length + '</span></button>';
+  for (var j = 0; j < CATEGORIES.length; j++) {
+    var k = CATEGORIES[j];
+    h += '<button data-cat="' + esc(k) + '"' + (catFilter === k ? ' class="sel"' : '') + '>' + esc(k) + '<span class="n">' + (counts[k] || 0) + '</span></button>';
+  }
+  if (none) h += '<button data-cat="__none"' + (catFilter === "__none" ? ' class="sel"' : '') + '>Χωρίς κατηγορία<span class="n">' + none + '</span></button>';
+  return h + '</div>';
+}
+function photoHtml(p, cls){
+  if (p && p.photo) return '<img class="' + cls + '" src="' + p.photo + '" alt="" loading="lazy">';
+  return cls === "thumb" ? '<span class="thumb ph">' + esc((p && p.name || "?").charAt(0)) + '</span>' : '<span class="ph">' + esc((p && p.name || "?").charAt(0)) + '</span>';
 }
 
 function searchBox(placeholder){
@@ -792,14 +861,14 @@ function searchBox(placeholder){
 /* ---------- Πώληση ---------- */
 function renderSell(){
   var h = '<div class="row"><h2>Πώληση</h2><span class="spacer"></span><span class="muted">Βάρδια: ' + esc(dayLabel(currentDay)) + '</span></div>';
-  h += searchBox("Αναζήτηση ρούχου, κωδικού ή κατηγορίας…");
+  h += searchBox("Αναζήτηση ρούχου ή κωδικού στάμπας…") + catBar();
   var list = products.filter(matchesSearch);
   if (!products.length) return h + '<div class="card empty" style="margin-top:16px">Δεν υπάρχουν ακόμα ρούχα. ' + (role === "owner" ? 'Προσθέστε από την καρτέλα «Απόθεμα».' : 'Ο ιδιοκτήτης πρέπει να τα προσθέσει.') + '</div>';
   if (!list.length) return h + '<div class="empty">Κανένα αποτέλεσμα.</div>';
   h += '<div class="prod-grid">';
   for (var i = 0; i < list.length; i++) {
     var p = list[i];
-    h += '<div class="card prod"><div class="name">' + esc(p.name) + '</div>';
+    h += '<div class="card prod"><div class="photo">' + photoHtml(p, "") + '</div><div class="body"><div class="name">' + esc(p.name) + '</div>';
     h += '<div class="meta">' + esc([p.code, p.category].filter(Boolean).join(" · ") || " ") + '</div><div class="sizes">';
     var sz = p.sizes || [];
     if (!sz.length) h += '<span class="muted">Χωρίς μεγέθη</span>';
@@ -808,7 +877,7 @@ function renderSell(){
       h += '<button class="' + cls + '" data-sell="' + esc(p.id) + '" data-size="' + esc(sz[j].s) + '"' + (q <= 0 ? ' disabled' : '') + '>' +
            '<span class="l">' + esc(sz[j].s) + '</span><span class="q">' + q + ' τμχ</span></button>';
     }
-    h += '</div></div>';
+    h += '</div></div></div>';
   }
   return h + '</div>';
 }
@@ -895,15 +964,34 @@ function renderReport(){
     var s = reportSales[i];
     if (s.undone) continue;
     var k = s.productId + "|" + s.size;
-    if (!groups[k]) { groups[k] = { name: s.productName, code: s.productCode, size: s.size, qty: 0 }; order.push(k); }
+    if (!groups[k]) {
+      /* Κατηγορία: προτιμάμε την τρέχουσα του προϊόντος (αν άλλαξε μετά),
+         αλλιώς το snapshot που κρατήθηκε τη στιγμή της πώλησης. */
+      var cp = findProduct(s.productId);
+      groups[k] = { name: s.productName, code: s.productCode, size: s.size, qty: 0, cat: (cp ? cp.category : s.productCategory) || "" };
+      order.push(k);
+    }
     groups[k].qty += s.qty;
   }
-  order.sort(function(a,b){ return groups[a].name.localeCompare(groups[b].name, "el") || String(groups[a].size).localeCompare(String(groups[b].size)); });
+  function catIdx(c){ var i = CATEGORIES.indexOf(c); return i < 0 ? 99 : i; }
+  order.sort(function(a,b){
+    return (catIdx(groups[a].cat) - catIdx(groups[b].cat)) ||
+           groups[a].name.localeCompare(groups[b].name, "el") ||
+           String(groups[a].size).localeCompare(String(groups[b].size));
+  });
 
   h += '<h3 style="margin-top:8px">Τι πουλήθηκε</h3><div class="card" style="margin-bottom:20px"><table class="t"><thead><tr><th>Ρούχο</th><th>Μέγεθος</th><th class="num">Τεμάχια</th></tr></thead><tbody>';
   if (!order.length) h += '<tr><td colspan="3" class="muted">Όλες οι πωλήσεις αναιρέθηκαν.</td></tr>';
+  /* Υποσύνολα ανά κατηγορία: γραμμή-επικεφαλίδα πριν από κάθε ομάδα. */
+  var catTotals = {};
+  for (var c0 = 0; c0 < order.length; c0++) { var gc = groups[order[c0]].cat; catTotals[gc] = (catTotals[gc] || 0) + groups[order[c0]].qty; }
+  var lastCat = null;
   for (var g = 0; g < order.length; g++) {
     var r = groups[order[g]];
+    if (r.cat !== lastCat) {
+      lastCat = r.cat;
+      h += '<tr class="cat-head"><td colspan="2">' + esc(r.cat || "Χωρίς κατηγορία") + '</td><td class="num">' + catTotals[r.cat] + '</td></tr>';
+    }
     h += '<tr><td>' + esc(r.name) + (r.code ? ' <span class="muted">' + esc(r.code) + '</span>' : '') + '</td><td>' + esc(r.size) + '</td><td class="num"><b>' + r.qty + '</b></td></tr>';
   }
   h += '</tbody></table></div>';
@@ -932,16 +1020,16 @@ function renderStock(){
   for (var i = 0; i < products.length; i++) total += totalStock(products[i]);
   var h = '<div class="row"><h2>Απόθεμα</h2><span class="spacer"></span><span class="muted">' + products.length + ' είδη · ' + total + ' τεμάχια</span>' +
           '<button class="btn primary" data-new>+ Νέο ρούχο</button></div>';
-  h += searchBox("Αναζήτηση…");
+  h += searchBox("Αναζήτηση ρούχου ή κωδικού στάμπας…") + catBar();
   var list = products.filter(matchesSearch);
   if (!list.length) return h + '<div class="card empty" style="margin-top:16px">' + (products.length ? 'Κανένα αποτέλεσμα.' : 'Δεν υπάρχουν ακόμα ρούχα. Πατήστε «Νέο ρούχο».') + '</div>';
-  h += '<div class="card" style="margin-top:16px"><table class="t cards"><thead><tr><th>Ρούχο</th><th>Κωδικός</th><th>Κατηγορία</th><th>Μεγέθη (απόθεμα)</th><th class="num">Σύνολο</th><th></th></tr></thead><tbody>';
+  h += '<div class="card" style="margin-top:16px"><table class="t cards"><thead><tr><th>Ρούχο</th><th>Κωδ. Στάμπας</th><th>Κατηγορία</th><th>Μεγέθη (απόθεμα)</th><th class="num">Σύνολο</th><th></th></tr></thead><tbody>';
   for (var j = 0; j < list.length; j++) {
     var p = list[j], key = "st" + p.id, open = openRows[key], sz = p.sizes || [], chips = "";
     for (var k = 0; k < sz.length; k++) chips += '<span class="chip' + (sz[k].q <= 0 ? ' zero' : '') + '">' + esc(sz[k].s) + ' · ' + sz[k].q + '</span>';
     h += '<tr data-row="' + key + '"' + (open ? ' class="open"' : '') + '>' +
-      '<td class="primary"><span class="exp-toggle">' + (open ? '▴' : '▾') + '</span><b>' + esc(p.name) + '</b><span class="m-only muted"> · ' + totalStock(p) + ' τμχ</span></td>' +
-      '<td data-l="Κωδικός">' + esc(p.code || "—") + '</td>' +
+      '<td class="primary"><span class="exp-toggle">' + (open ? '▴' : '▾') + '</span><div class="cell-flex">' + photoHtml(p, "thumb") + '<div><b>' + esc(p.name) + '</b><span class="m-only muted"> · ' + totalStock(p) + ' τμχ</span></div></div></td>' +
+      '<td data-l="Κωδ. Στάμπας">' + esc(p.code || "—") + '</td>' +
       '<td data-l="Κατηγορία">' + esc(p.category || "—") + '</td>' +
       '<td class="act">' + (chips || '<span class="muted">—</span>') + '</td>' +
       '<td data-l="Σύνολο" class="num d-only">' + totalStock(p) + '</td>' +
@@ -956,6 +1044,26 @@ function openProductModal(id){
   /* baseSizes: οι ποσότητες τη στιγμή που άνοιξε η φόρμα (βλ. saveProduct). */
   var base = {};
   if (p) for (var i = 0; i < rows.length; i++) base[rows[i].s] = rows[i].q;
+  var photo = p ? (p.photo || "") : "";
+  /* Νέο ρούχο: προεπιλογή η κατηγορία που είναι επιλεγμένη στο φίλτρο,
+     γιατί συνήθως ο ιδιοκτήτης περνάει πολλά ρούχα της ίδιας κατηγορίας. */
+  var cat = p ? (p.category || "") : (CATEGORIES.indexOf(catFilter) >= 0 ? catFilter : "");
+
+  function catOptions(){
+    var h = '<option value="">— Επιλέξτε —</option>';
+    for (var i = 0; i < CATEGORIES.length; i++) h += '<option' + (cat === CATEGORIES[i] ? ' selected' : '') + '>' + esc(CATEGORIES[i]) + '</option>';
+    /* Αν ένα παλιό προϊόν έχει κατηγορία εκτός λίστας, τη δείχνουμε ώστε
+       να μη σβηστεί σιωπηλά με την αποθήκευση. */
+    if (cat && CATEGORIES.indexOf(cat) < 0) h += '<option selected>' + esc(cat) + '</option>';
+    return h;
+  }
+  function photoFieldHtml(){
+    return '<div class="photo">' + (photo ? '<img src="' + photo + '" alt="">' : '<span class="ph">+</span>') + '</div>' +
+      '<div><label class="btn small" style="cursor:pointer">' + (photo ? 'Αλλαγή φωτογραφίας' : 'Προσθήκη φωτογραφίας') +
+      '<input type="file" id="fPhoto" accept="image/*" class="hidden"></label>' +
+      (photo ? ' <button class="btn small danger" data-rmphoto>Αφαίρεση</button>' : '') +
+      '<div class="muted" style="font-size:12px;margin-top:6px">Από κάμερα ή αρχείο. Συμπιέζεται αυτόματα.</div></div>';
+  }
 
   function sizeRowsHtml(){
     var h = "";
@@ -969,9 +1077,10 @@ function openProductModal(id){
   function body(){
     return '<div class="card pad modal">' +
       '<h3>' + (p ? 'Επεξεργασία ρούχου' : 'Νέο ρούχο') + '</h3>' +
-      '<div style="margin:14px 0"><label class="f">Όνομα *</label><input type="text" id="fName" value="' + esc(p ? p.name : "") + '"></div>' +
-      '<div class="row" style="margin-bottom:14px;flex-wrap:nowrap"><div style="flex:1"><label class="f">Κωδικός</label><input type="text" id="fCode" value="' + esc(p ? p.code || "" : "") + '"></div>' +
-      '<div style="flex:1"><label class="f">Κατηγορία</label><input type="text" id="fCat" value="' + esc(p ? p.category || "" : "") + '" placeholder="π.χ. Παντελόνια"></div></div>' +
+      '<div class="photo-field" id="photoField" style="margin-top:14px">' + photoFieldHtml() + '</div>' +
+      '<div style="margin:0 0 14px"><label class="f">Όνομα *</label><input type="text" id="fName" value="' + esc(p ? p.name : "") + '"></div>' +
+      '<div class="row" style="margin-bottom:14px;flex-wrap:nowrap"><div style="flex:1"><label class="f">Κωδικός Στάμπας</label><input type="text" id="fCode" value="' + esc(p ? p.code || "" : "") + '"></div>' +
+      '<div style="flex:1"><label class="f">Κατηγορία *</label><select id="fCat">' + catOptions() + '</select></div></div>' +
       '<label class="f">Μεγέθη & απόθεμα</label><div class="size-rows" id="sizeRows">' + sizeRowsHtml() + '</div>' +
       '<button class="btn small" data-add>+ Μέγεθος</button>' +
       (p ? '<p class="muted" style="font-size:12px">Αν γίνει πώληση ενώ η φόρμα είναι ανοιχτή, δεν χάνεται: αποθηκεύεται μόνο η αλλαγή που κάνατε εσείς.</p>' : '') +
@@ -990,10 +1099,22 @@ function openProductModal(id){
   }
 
   var m = openModal(body());
+  m.onchange = function(e){
+    if (e.target.id !== "fPhoto" || !e.target.files || !e.target.files[0]) return;
+    $("photoField").querySelector(".photo").innerHTML = '<span class="muted" style="font-size:12px">Επεξεργασία…</span>';
+    resizePhoto(e.target.files[0]).then(function(url){
+      photo = url;
+      $("photoField").innerHTML = photoFieldHtml();
+    }, function(err){
+      $("photoField").innerHTML = photoFieldHtml();
+      showError("Φωτογραφία", err);
+    });
+  };
   m.onclick = function(e){
     var t = e.target.closest ? e.target.closest("button") : null;
     if (e.target === m || (t && t.hasAttribute("data-close"))) { closeModal(); return; }
     if (!t) return;
+    if (t.hasAttribute("data-rmphoto")) { photo = ""; $("photoField").innerHTML = photoFieldHtml(); return; }
     if (t.hasAttribute("data-add")) { readRows(); rows.push({ s: "", q: 0 }); $("sizeRows").innerHTML = sizeRowsHtml(); }
     else if (t.hasAttribute("data-rm")) { readRows(); rows.splice(+t.getAttribute("data-rm"), 1); $("sizeRows").innerHTML = sizeRowsHtml(); }
     else if (t.hasAttribute("data-del")) {
@@ -1004,6 +1125,8 @@ function openProductModal(id){
       readRows();
       var name = $("fName").value.trim();
       if (!name) { $("fName").focus(); return; }
+      cat = $("fCat").value;
+      if (!cat) { $("fCat").focus(); showError("Αποθήκευση", new Error("Επιλέξτε κατηγορία.")); return; }
       var seen = {}, clean = [];
       for (var i = 0; i < rows.length; i++) {
         if (!rows[i].s) continue;
@@ -1011,10 +1134,45 @@ function openProductModal(id){
         seen[rows[i].s] = true; clean.push(rows[i]);
       }
       t.disabled = true;
-      saveProduct(p ? p.id : null, { name: name, code: $("fCode").value.trim(), category: $("fCat").value.trim(), sizes: clean }, base)
+      saveProduct(p ? p.id : null, { name: name, code: $("fCode").value.trim(), category: cat, photo: photo, sizes: clean }, base)
         .then(function(){ closeModal(); showOk("Αποθηκεύτηκε."); }, function(err){ t.disabled = false; showError("Αποθήκευση", err); });
     }
   };
+}
+
+/* Συμπίεση φωτογραφίας στον browser πριν μπει στο Firestore.
+   Μια φωτό κινητού είναι 3-8MB· το Firestore doc δέχεται έως 1MB. Τη
+   ζωγραφίζουμε σε canvas με μέγιστη πλευρά PHOTO_MAX_PX και την εξάγουμε
+   ως JPEG. Οι σύγχρονοι browsers εφαρμόζουν αυτόματα τον EXIF
+   προσανατολισμό στο <img>, άρα η φωτό δεν βγαίνει γυρισμένη.
+   Λευκό φόντο πριν το draw: τα PNG με διαφάνεια αλλιώς γίνονται μαύρα. */
+function resizePhoto(file){
+  return new Promise(function(resolve, reject){
+    if (!/^image\//.test(file.type || "")) { reject(new Error("Το αρχείο δεν είναι εικόνα.")); return; }
+    var reader = new FileReader();
+    reader.onerror = function(){ reject(new Error("Δεν διαβάστηκε το αρχείο.")); };
+    reader.onload = function(){
+      var img = new Image();
+      img.onerror = function(){ reject(new Error("Μη υποστηριζόμενη μορφή εικόνας (π.χ. HEIC). Δοκιμάστε JPEG/PNG.")); };
+      img.onload = function(){
+        var w = img.naturalWidth, h = img.naturalHeight;
+        var scale = Math.min(1, PHOTO_MAX_PX / Math.max(w, h));
+        var cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+        var c = document.createElement("canvas");
+        c.width = cw; c.height = ch;
+        var ctx = c.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, cw, ch);
+        ctx.drawImage(img, 0, 0, cw, ch);
+        var url = c.toDataURL("image/jpeg", PHOTO_QUALITY);
+        if (url.length > PHOTO_MAX_BYTES) url = c.toDataURL("image/jpeg", 0.5);
+        if (url.length > PHOTO_MAX_BYTES) { reject(new Error("Η φωτογραφία είναι πολύ μεγάλη ακόμα και μετά τη συμπίεση.")); return; }
+        resolve(url);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 /* Επιβεβαίωση με δεύτερο πάτημα στο ίδιο κουμπί, αντί για confirm():
@@ -1072,6 +1230,7 @@ function bindEvents(){
     if (!b) return;
     tab = b.getAttribute("data-tab");
     search = "";
+    catFilter = "";
     renderAll();
   };
 
@@ -1088,6 +1247,7 @@ function bindEvents(){
   $("view").addEventListener("click", function(e){
     var b = e.target.closest ? e.target.closest("button") : null;
     if (b) {
+      if (b.hasAttribute("data-cat")) { catFilter = b.getAttribute("data-cat"); renderAll(); return; }
       if (b.hasAttribute("data-sell")) { openSellModal(b.getAttribute("data-sell"), b.getAttribute("data-size")); return; }
       if (b.hasAttribute("data-undo")) {
         if (!confirmInline(b, "Σίγουρα;")) return;
