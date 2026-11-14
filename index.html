@@ -263,7 +263,7 @@ tr.undone .strike{text-decoration:line-through}
    εξάρτηση από άλλο CDN. Χρώματα σταθερά (όχι tokens): το χαρτί είναι
    πάντα λευκό, ακόμα κι αν η συσκευή είναι σε dark mode. */
 #printDoc{display:none}
-.pd{font-family:var(--font-sans);color:#111;font-size:11pt;line-height:1.35}
+.pd{font-family:var(--font-sans);color:#111;background:#fff;font-size:11pt;line-height:1.35}
 .pd .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #111;padding-bottom:10px;margin-bottom:14px}
 .pd .hd img{height:46px;filter:none}
 .pd .hd .ttl{text-align:right}
@@ -337,6 +337,9 @@ tr.undone .strike{text-decoration:line-through}
 
 <div id="modalRoot"></div>
 <div id="printDoc"></div>
+<!-- Εκτός οθόνης "σκηνή" όπου ζωγραφίζεται το A4 πριν γίνει PDF (βλ. makeOrderPdf).
+     Όχι display:none: το html2canvas χρειάζεται στοιχείο που έχει layout. -->
+<div id="pdfStage" aria-hidden="true" style="position:absolute;left:-10000px;top:0;width:718px;background:#fff"></div>
 
 <script>
 (function(){
@@ -375,7 +378,7 @@ var LOW_STOCK = 2;
 
 /* Έκδοση: εμφανίζεται κάτω από το κουμπί Είσοδος, ώστε να φαίνεται αμέσως
    αν ο browser / το GitHub Pages σερβίρει την τελευταία έκδοση ή παλιά από cache. */
-var APP_VERSION = "v8 · 14/11 19:50";
+var APP_VERSION = "v9 · 14/11 20:10";
 
 var LS_ROLE = "arches.role"; /* localStorage key: κάθε συσκευή θυμάται τον ρόλο της */
 
@@ -1492,6 +1495,10 @@ function renderOrder(){
   }
 
   var h = '<div class="row"><h2>Παραγγελία προμηθευτή</h2></div>';
+  if (isInAppBrowser()) {
+    h += '<div class="banner offline" style="border-radius:var(--radius-sm);margin:8px 0">Ανοίξατε την εφαρμογή μέσα από άλλη εφαρμογή (π.χ. Google). ' +
+      'Αν το PDF δεν ανοίγει, ανοίξτε τη σελίδα στο Chrome / Safari.</div>';
+  }
 
   /* Στοιχεία προμηθευτή + σημειώσεις (αποθηκεύονται με το change, όχι σε
      κάθε πλήκτρο, για να μη γίνεται write ανά χαρακτήρα). */
@@ -1553,13 +1560,14 @@ function renderOrder(){
   if (!supplierOrders.length) {
     h += '<div class="card empty">Καμία ολοκληρωμένη παραγγελία ακόμα.</div>';
   } else {
-    h += '<div class="card"><table class="t"><thead><tr><th>Αρ.</th><th>Ημερομηνία</th><th>Προμηθευτής</th><th class="num">Τεμάχια</th><th></th></tr></thead><tbody>';
+    h += '<div class="card"><table class="t"><thead><tr><th>Αρ.</th><th>Ημερομηνία</th><th>Αρχείο</th><th class="num">Τεμάχια</th><th></th></tr></thead><tbody>';
     for (var o = 0; o < supplierOrders.length; o++) {
       var so = supplierOrders[o], pc = 0;
       for (var x = 0; x < (so.lines || []).length; x++) pc += so.lines[x].qty;
-      h += '<tr><td><b>' + esc(so.number) + '</b></td><td>' + esc(so.day ? dayLabel(so.day) : "") + '</td><td>' + esc(so.supplier || "—") + '</td>' +
-        '<td class="num">' + pc + '</td><td class="num"><button class="btn small" data-ordpdf="' + esc(so.id) + '">PDF</button> ' +
-        '<button class="btn small danger" data-orddel="' + esc(so.id) + '">Διαγραφή</button></td></tr>';
+      h += '<tr><td><b>' + esc(so.number) + '</b></td><td>' + esc(so.day ? dayLabel(so.day) : "") + '</td>' +
+        '<td><button class="btn small primary" data-ordpdf="' + esc(so.id) + '">PDF</button></td>' +
+        '<td class="num">' + pc + '</td>' +
+        '<td class="num"><button class="btn small danger" data-orddel="' + esc(so.id) + '">Διαγραφή</button></td></tr>';
     }
     h += '</tbody></table></div>';
   }
@@ -1643,27 +1651,184 @@ function buildOrderDoc(order, isDraft){
   return h;
 }
 
-/* Εκτύπωση → ο χρήστης διαλέγει «Αποθήκευση ως PDF» (desktop) ή
-   Κοινή χρήση → PDF (κινητό). Αλλάζουμε προσωρινά το document.title
-   γιατί από αυτό βγαίνει το προτεινόμενο όνομα αρχείου του PDF. */
-function printOrder(order, isDraft){
-  $("printDoc").innerHTML = buildOrderDoc(order, isDraft);
-  var oldTitle = document.title;
-  document.title = "ARCHES_Paraggelia_" + (isDraft ? "prosxedio_" + dayKey(new Date()) : order.number);
-  document.body.classList.add("print-order");
-  function cleanup(){
-    document.body.classList.remove("print-order");
-    document.title = oldTitle;
-    window.removeEventListener("afterprint", cleanup);
+/* ==========================================================================
+   PDF ΠΑΡΑΓΓΕΛΙΑΣ
+   Αρχικά το PDF έβγαινε με window.print() → «Αποθήκευση ως PDF». Αυτό ΔΕΝ
+   δουλεύει μέσα σε in-app browsers (εφαρμογή Google, Facebook, Viber κ.λπ.),
+   όπου το print() απλώς αγνοείται και το κουμπί φαίνεται "νεκρό".
+   Τώρα φτιάχνουμε πραγματικό αρχείο PDF στον browser:
+     1. το έγγραφο A4 (buildOrderDoc) ζωγραφίζεται σε κρυφό div,
+     2. το html2canvas το μετατρέπει σε εικόνα — έτσι τα ελληνικά, το logo
+        και οι φωτογραφίες βγαίνουν ακριβώς όπως στην οθόνη, χωρίς να
+        χρειάζεται ενσωμάτωση ελληνικής γραμματοσειράς στο jsPDF,
+     3. το jsPDF κόβει την εικόνα σε σελίδες A4 (σε όρια γραμμών πίνακα,
+        ώστε να μη μένει μισή γραμμή σε κάθε σελίδα) και δίνει το αρχείο.
+   Tradeoff: το κείμενο στο PDF είναι εικόνα (δεν επιλέγεται/αντιγράφεται).
+   Οι βιβλιοθήκες φορτώνονται από CDN ΜΟΝΟ την πρώτη φορά που ζητηθεί PDF,
+   ώστε να μη βαραίνει το άνοιγμα της εφαρμογής για τον υπάλληλο.
+   ========================================================================== */
+var PDF_LIBS = [
+  "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js",
+  "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+];
+var pdfLibsPromise = null;
+
+function loadScript(src){
+  return new Promise(function(resolve, reject){
+    var el = document.createElement("script");
+    el.src = src;
+    el.onload = function(){ resolve(); };
+    el.onerror = function(){ reject(new Error("Δεν φόρτωσε: " + src)); };
+    document.head.appendChild(el);
+  });
+}
+function loadPdfLibs(){
+  if (window.html2canvas && window.jspdf) return Promise.resolve();
+  if (!pdfLibsPromise) {
+    /* Σειριακά (όχι παράλληλα) για απλότητα· αν αποτύχει, μηδενίζουμε το
+       promise ώστε το επόμενο πάτημα να ξαναδοκιμάσει αντί να αποτυγχάνει για πάντα. */
+    pdfLibsPromise = loadScript(PDF_LIBS[0]).then(function(){ return loadScript(PDF_LIBS[1]); })
+      .catch(function(err){ pdfLibsPromise = null; throw new Error("Δεν φόρτωσαν τα εργαλεία PDF (σύνδεση;). " + err.message); });
   }
-  window.addEventListener("afterprint", cleanup);
-  /* Μικρή καθυστέρηση ώστε να "ζωγραφιστούν" οι φωτογραφίες πριν ανοίξει
-     ο διάλογος εκτύπωσης — αλλιώς σε κάποιους browsers βγαίνουν κενές. */
-  setTimeout(function(){
-    window.print();
-    /* Safari σε iOS δεν στέλνει πάντα afterprint· καθαρίζουμε και με timer. */
-    setTimeout(cleanup, 1500);
-  }, 300);
+  return pdfLibsPromise;
+}
+
+function waitImages(root){
+  var imgs = root.getElementsByTagName("img"), ps = [];
+  for (var i = 0; i < imgs.length; i++) {
+    (function(img){
+      if (img.complete) return;
+      ps.push(new Promise(function(res){ img.onload = res; img.onerror = res; }));
+    })(imgs[i]);
+  }
+  return Promise.all(ps);
+}
+
+/* Πλάτος σελίδας σε CSS px: 190mm ωφέλιμο πλάτος A4 (10mm περιθώρια) στα 96dpi. */
+var PDF_DOC_PX = 718;
+var PDF_MARGIN_MM = 10;
+
+function makeOrderPdf(order, isDraft){
+  return loadPdfLibs().then(function(){
+    var stage = $("pdfStage");
+    stage.innerHTML = buildOrderDoc(order, isDraft);
+    var doc = stage.firstChild;
+    return waitImages(stage).then(function(){
+      /* Υποψήφια σημεία αλλαγής σελίδας: η αρχή κάθε γραμμής πίνακα,
+         τίτλου κατηγορίας και των τελικών μπλοκ. */
+      var top0 = doc.getBoundingClientRect().top, breaks = [];
+      /* Εξαιρούμε την κεφαλίδα πίνακα και την 1η γραμμή του: αλλιώς η
+         σελίδα θα μπορούσε να κοπεί αμέσως μετά τον τίτλο κατηγορίας,
+         αφήνοντάς τον "ορφανό" στο κάτω μέρος της προηγούμενης σελίδας. */
+      var els = doc.querySelectorAll("tbody tr:not(:first-child), h3, .grand, .notes, .foot");
+      for (var i = 0; i < els.length; i++) breaks.push(els[i].getBoundingClientRect().top - top0);
+      var totalPx = doc.getBoundingClientRect().height;
+      return window.html2canvas(doc, { scale: 2, backgroundColor: "#ffffff", logging: false, useCORS: true })
+        .then(function(canvas){ return { canvas: canvas, breaks: breaks, totalPx: totalPx }; });
+    });
+  }).then(function(r){
+    var jsPDF = window.jspdf.jsPDF;
+    var pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
+    var contentW = 210 - 2 * PDF_MARGIN_MM, contentH = 297 - 2 * PDF_MARGIN_MM;
+    var pxPerMm = PDF_DOC_PX / contentW;
+    var pageHpx = contentH * pxPerMm;
+    var ratio = r.canvas.width / PDF_DOC_PX; /* canvas px ανά CSS px (=scale) */
+
+    var start = 0, first = true;
+    while (start < r.totalPx - 1) {
+      var limit = start + pageHpx, cut = limit;
+      if (limit < r.totalPx) {
+        /* Το πιο κάτω σημείο αλλαγής που χωράει σε αυτή τη σελίδα. */
+        var best = -1;
+        for (var b = 0; b < r.breaks.length; b++) if (r.breaks[b] > start + 20 && r.breaks[b] <= limit && r.breaks[b] > best) best = r.breaks[b];
+        if (best > 0) cut = best;
+      } else {
+        cut = r.totalPx;
+      }
+      var sliceH = cut - start;
+      var c = document.createElement("canvas");
+      c.width = r.canvas.width;
+      c.height = Math.ceil(sliceH * ratio);
+      var ctx = c.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(r.canvas, 0, Math.floor(start * ratio), c.width, c.height, 0, 0, c.width, c.height);
+      if (!first) pdf.addPage();
+      pdf.addImage(c.toDataURL("image/jpeg", 0.9), "JPEG", PDF_MARGIN_MM, PDF_MARGIN_MM, contentW, sliceH / pxPerMm);
+      first = false;
+      start = cut;
+    }
+    $("pdfStage").innerHTML = "";
+    return pdf.output("blob");
+  });
+}
+
+function isMobileDevice(){ return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || ""); }
+/* In-app browsers: εφαρμογή Google (GSA), Android WebView (; wv)), Facebook,
+   Instagram, Viber, LINE. Εκεί συχνά δεν δουλεύουν ούτε print ούτε downloads. */
+function isInAppBrowser(){ return /GSA\/|; wv\)|FBAN|FBAV|Instagram|Viber|Line\//i.test(navigator.userAgent || ""); }
+
+/* Παράδοση του PDF:
+   - Κινητό: Web Share API με αρχείο → ανοίγει απευθείας το μενού Κοινής
+     χρήσης (Viber, Gmail, WhatsApp, Αποθήκευση) — ό,τι χρειάζεται για να
+     φτάσει στον προμηθευτή.
+   - Αλλιώς (ή αν δεν υποστηρίζεται): κατέβασμα αρχείου, και σε κινητό ένα
+     παράθυρο με σύνδεσμο «Άνοιγμα PDF» ως εφεδρεία για in-app browsers. */
+function deliverPdf(blob, filename){
+  var file = null;
+  try { file = new File([blob], filename, { type: "application/pdf" }); } catch (e) { file = null; }
+  if (file && isMobileDevice() && navigator.canShare && navigator.share) {
+    var canShare = false;
+    try { canShare = navigator.canShare({ files: [file] }); } catch (e) { canShare = false; }
+    if (canShare) {
+      return navigator.share({ files: [file], title: filename }).catch(function(err){
+        if (err && err.name === "AbortError") return; /* ο χρήστης έκλεισε το μενού: όχι σφάλμα */
+        downloadBlob(blob, filename);
+      });
+    }
+  }
+  downloadBlob(blob, filename);
+  return Promise.resolve();
+}
+function downloadBlob(blob, filename){
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url; a.download = filename; a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  if (isMobileDevice() || isInAppBrowser()) {
+    openModal('<div class="card pad modal"><h3>Το PDF είναι έτοιμο</h3>' +
+      '<p class="muted">Αν δεν κατέβηκε αυτόματα, πατήστε:</p>' +
+      '<a class="btn primary" style="width:100%;text-decoration:none" href="' + url + '" target="_blank" rel="noopener" download="' + esc(filename) + '">Άνοιγμα PDF</a>' +
+      (isInAppBrowser() ? '<p class="muted" style="font-size:13px">Είστε μέσα σε εφαρμογή (π.χ. Google) που περιορίζει τα αρχεία. Αν δεν ανοίγει, ανοίξτε την εφαρμογή ARCHES στο <b>Chrome</b> ή στο <b>Safari</b> (μενού ⋮ → «Άνοιγμα σε…»).</p>' : '') +
+      '<div class="row" style="margin-top:12px"><span class="spacer"></span><button class="btn" data-close>Κλείσιμο</button></div></div>')
+      .onclick = function(e){
+        var t = e.target.closest ? e.target.closest("button") : null;
+        if (e.target === this || (t && t.hasAttribute("data-close"))) closeModal();
+      };
+  } else {
+    showOk("Το PDF κατέβηκε: " + filename);
+  }
+  /* Δεν κάνουμε revoke αμέσως: ο σύνδεσμος «Άνοιγμα PDF» το χρειάζεται. */
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 10 * 60 * 1000);
+}
+
+/* Κεντρική συνάρτηση: φτιάχνει + παραδίδει. Το κουμπί που πατήθηκε
+   απενεργοποιείται με ένδειξη προόδου, γιατί η πρώτη φορά (φόρτωση
+   βιβλιοθηκών) μπορεί να πάρει 1-3 δευτερόλεπτα. */
+function exportOrderPdf(order, isDraft, btn){
+  var filename = "ARCHES_Paraggelia_" + (isDraft ? "prosxedio_" + dayKey(new Date()) : order.number) + ".pdf";
+  var oldLabel = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "Δημιουργία PDF…"; }
+  return makeOrderPdf(order, isDraft).then(function(blob){
+    return deliverPdf(blob, filename);
+  }).catch(function(err){
+    showError("PDF", err);
+  }).then(function(){
+    /* Το κουμπί μπορεί να μην υπάρχει πια (re-render)· αν υπάρχει, το επαναφέρουμε. */
+    if (btn && document.body.contains(btn)) { btn.disabled = false; btn.textContent = oldLabel; }
+  });
 }
 function findSupplierOrder(id){
   for (var i = 0; i < supplierOrders.length; i++) if (supplierOrders[i].id === id) return supplierOrders[i];
@@ -1768,7 +1933,7 @@ function bindEvents(){
         return;
       }
       if (b.hasAttribute("data-ordpreview")) {
-        printOrder({ lines: draftLines(), supplier: draft.supplier, supplierInfo: draft.supplierInfo, notes: draft.notes, ts: Date.now() }, true);
+        exportOrderPdf({ lines: draftLines(), supplier: draft.supplier, supplierInfo: draft.supplierInfo, notes: draft.notes, ts: Date.now() }, true, b);
         return;
       }
       if (b.hasAttribute("data-ordfinal")) {
@@ -1776,13 +1941,17 @@ function bindEvents(){
         b.disabled = true;
         finalizeOrder().then(function(order){
           showOk("Η παραγγελία " + order.number + " ολοκληρώθηκε.");
-          printOrder(order, false);
+          /* Το κουμπί "Ολοκλήρωση" εξαφανίζεται (το καλάθι άδειασε), οπότε
+             δεν περνάμε btn. Σημ.: σε κινητό το share μπορεί να μπλοκαριστεί
+             αν δεν προέρχεται άμεσα από πάτημα· τότε πέφτουμε σε download +
+             παράθυρο «Άνοιγμα PDF», και το PDF υπάρχει πάντα στο Ιστορικό. */
+          exportOrderPdf(order, false, null);
         }, function(err){ b.disabled = false; showError("Ολοκλήρωση παραγγελίας", err); });
         return;
       }
       if (b.hasAttribute("data-ordpdf")) {
         var so = findSupplierOrder(b.getAttribute("data-ordpdf"));
-        if (so) printOrder(so, false);
+        if (so) exportOrderPdf(so, false, b);
         return;
       }
       if (b.hasAttribute("data-orddel")) {
