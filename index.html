@@ -168,6 +168,27 @@ label.f{display:block;font-size:13px;color:var(--ink-2);margin:0 0 4px}
 select{padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);min-height:42px;width:100%}
 tr.cat-head td{background:var(--surface-2);font-family:var(--font-serif);font-size:15px;padding:8px 12px}
 
+/* ---------- Παραγγελία προμηθευτή ---------- */
+.ord-top{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0 16px}
+textarea{padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);width:100%;min-height:42px;resize:vertical;font:inherit;color:inherit}
+.basket-line{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.basket-line:last-child{border-bottom:0}
+.basket-line .chip{background:var(--surface-2)}
+.ord-prod{display:grid;grid-template-columns:56px 1fr;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.ord-prod:last-child{border-bottom:0}
+.ord-prod.has{background:var(--surface-2)}
+.ord-sizes{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.osz{border:1px solid var(--line);border-radius:var(--radius-sm);padding:6px;background:var(--surface);text-align:center;min-width:92px}
+.osz.on{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.osz .l{font-weight:600;font-size:13px}
+.osz .st{font-size:11px;color:var(--ink-3)}
+.osz .st.zero{color:var(--danger)}
+.step{display:flex;align-items:center;gap:2px;margin-top:4px}
+.step button{width:28px;height:30px;border:1px solid var(--line);background:var(--surface);border-radius:6px;cursor:pointer;padding:0;font-size:16px;line-height:1}
+.step input{width:36px;min-height:30px;height:30px;padding:2px;text-align:center;border-radius:6px}
+.step input::-webkit-outer-spin-button,.step input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.step input{-moz-appearance:textfield}
+
 /* ---------- Πίνακες / λίστες ---------- */
 table.t{width:100%;border-collapse:collapse}
 table.t th,table.t td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
@@ -227,11 +248,54 @@ tr.undone .strike{text-decoration:line-through}
   table.t.cards td.num{text-align:left}
   table.t.cards td[data-l]:before{content:attr(data-l) ": ";color:var(--ink-3);font-size:12px}
   .exp-toggle{display:inline;float:right;color:var(--ink-3)}
+  .ord-top{grid-template-columns:1fr}
+  .ord-prod{grid-template-columns:44px 1fr;padding:10px}
+  /* Σταθερό πλάτος 1/3: με flex-grow το τελευταίο μέγεθος (π.χ. 3XL) θα απλωνόταν σε όλη τη γραμμή. */
+  .osz{min-width:0;flex:0 0 calc((100% - 16px) / 3)}
   .modal-bg{align-items:flex-end;padding:0}
   .modal{max-width:none;border-radius:var(--radius) var(--radius) 0 0}
 }
 
+/* ---------- Έγγραφο παραγγελίας (μόνο για εκτύπωση / PDF) ----------
+   Το PDF φτιάχνεται από τον browser (Εκτύπωση → Αποθήκευση ως PDF) και ΟΧΙ
+   με βιβλιοθήκη τύπου jsPDF: έτσι τα ελληνικά, το logo και οι φωτογραφίες
+   βγαίνουν σωστά χωρίς ενσωμάτωση γραμματοσειρών, και δεν προστίθεται
+   εξάρτηση από άλλο CDN. Χρώματα σταθερά (όχι tokens): το χαρτί είναι
+   πάντα λευκό, ακόμα κι αν η συσκευή είναι σε dark mode. */
+#printDoc{display:none}
+.pd{font-family:var(--font-sans);color:#111;font-size:11pt;line-height:1.35}
+.pd .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #111;padding-bottom:10px;margin-bottom:14px}
+.pd .hd img{height:46px;filter:none}
+.pd .hd .ttl{text-align:right}
+.pd .hd .ttl h1{font-family:var(--font-serif);font-size:20pt;margin:0;letter-spacing:.04em}
+.pd .meta{font-size:10pt;color:#444}
+.pd .parties{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.pd .box{border:1px solid #bbb;border-radius:4px;padding:8px 10px;font-size:10pt}
+.pd .box .k{font-size:8pt;text-transform:uppercase;letter-spacing:.08em;color:#666;margin-bottom:3px}
+.pd .box b{font-size:11pt}
+.pd h3{font-family:var(--font-serif);font-size:13pt;margin:14px 0 6px;color:#111}
+.pd table{width:100%;border-collapse:collapse;font-size:10pt;page-break-inside:auto}
+.pd tr{page-break-inside:avoid}
+.pd th,.pd td{border:1px solid #bbb;padding:4px 6px;text-align:left;vertical-align:middle}
+.pd th{background:#f1f1f1;font-size:8.5pt;text-transform:uppercase;letter-spacing:.04em}
+.pd td.q,.pd th.q{text-align:center;width:42px}
+.pd td.tot,.pd th.tot{text-align:center;width:52px;font-weight:700;background:#f7f7f7}
+.pd td.ph{width:40px;padding:2px}
+.pd td.ph img{width:34px;height:42px;object-fit:contain;display:block}
+.pd tr.sum td{font-weight:700;background:#f7f7f7}
+.pd .grand{display:flex;justify-content:flex-end;gap:24px;margin-top:14px;font-size:12pt;border-top:2px solid #111;padding-top:8px}
+.pd .notes{margin-top:14px;border:1px solid #bbb;border-radius:4px;padding:8px 10px;font-size:10pt;white-space:pre-wrap}
+.pd .foot{margin-top:24px;font-size:9pt;color:#555;display:flex;justify-content:space-between}
+.pd .draft-mark{color:#b3261e;font-weight:700}
+
+@page{size:A4;margin:12mm}
 @media print{
+  /* Εκτύπωση παραγγελίας: κρύβουμε ΟΛΗ την εφαρμογή και δείχνουμε μόνο
+     το έγγραφο. Για άλλες εκτυπώσεις (αναφορά βάρδιας) το #printDoc μένει κρυφό. */
+  body.print-order #app, body.print-order #login, body.print-order #modalRoot, body.print-order #toasts, body.print-order #banners{display:none !important}
+  body.print-order #printDoc{display:block}
+  body.print-order{background:#fff}
+  .pd *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   header.app nav, nav.tabs, #banners, .no-print{display:none !important}
   body{background:#fff}
   .card{box-shadow:none}
@@ -272,6 +336,7 @@ tr.undone .strike{text-decoration:line-through}
 </section>
 
 <div id="modalRoot"></div>
+<div id="printDoc"></div>
 
 <script>
 (function(){
@@ -310,7 +375,7 @@ var LOW_STOCK = 2;
 
 /* Έκδοση: εμφανίζεται κάτω από το κουμπί Είσοδος, ώστε να φαίνεται αμέσως
    αν ο browser / το GitHub Pages σερβίρει την τελευταία έκδοση ή παλιά από cache. */
-var APP_VERSION = "v6 · 14/11 19:10";
+var APP_VERSION = "v7 · 14/11 19:45";
 
 var LS_ROLE = "arches.role"; /* localStorage key: κάθε συσκευή θυμάται τον ρόλο της */
 
@@ -368,7 +433,17 @@ var offline = false;
 var products = [];        /* {id,name,code,category,sizes:[{s,q}],ts} */
 var todaySales = [];      /* πωλήσεις της σημερινής βάρδιας */
 var reportSales = [];     /* πωλήσεις της ημέρας που βλέπει ο ιδιοκτήτης στην Αναφορά */
-var settings = { employeePin: DEFAULT_EMPLOYEE_PIN };
+var settings = { employeePin: DEFAULT_EMPLOYEE_PIN, store: {} };
+
+/* Παραγγελίες προμηθευτή.
+   - draft: το "καλάθι" που μαζεύει ο ιδιοκτήτης. Ζει στο Firestore (doc
+     supplierOrders/draft), όχι στο localStorage, ώστε να μη χάνεται και να
+     συνεχίζεται από άλλη συσκευή (π.χ. ξεκινάει στο κινητό, τελειώνει στο PC).
+   - supplierOrders: οι ολοκληρωμένες, για ιστορικό και ξανα-εκτύπωση PDF.
+   Η παραγγελία ΔΕΝ αλλάζει το απόθεμα: είναι αίτημα προς τον προμηθευτή·
+   το απόθεμα ανεβαίνει όταν έρθει το εμπόρευμα (Απόθεμα → Επεξεργασία). */
+var draft = { lines: {}, supplier: "", supplierInfo: "", notes: "" };
+var supplierOrders = [];
 
 var role = null;          /* "owner" | "employee" */
 var tab = null;
@@ -502,6 +577,7 @@ function goOffline(reason){
 function productsCol(){ return db.collection("products"); }
 function salesCol(){ return db.collection("sales"); }
 function settingsDoc(){ return db.collection("settings").doc("app"); }
+function supplierOrdersCol(){ return db.collection("supplierOrders"); }
 
 function snapToArray(snap){
   var arr = [];
@@ -529,8 +605,25 @@ function startListeners(){
   settingsDoc().onSnapshot(function(doc){
     var d = doc.exists ? doc.data() : {};
     settings.employeePin = d.employeePin || DEFAULT_EMPLOYEE_PIN;
+    settings.store = d.store || {};
     renderAll();
   }, function(err){ showError("Φόρτωση ρυθμίσεων", err); });
+
+  /* SUPPLIER ORDERS: ΧΩΡΙΣ .limit(). Λίγες εγγραφές (μερικές τον μήνα) που
+     πρέπει να μένουν όλες στο ιστορικό. Το ίδιο listener φέρνει και το
+     draft (doc με id "draft"), που το ξεχωρίζουμε εδώ. */
+  supplierOrdersCol().onSnapshot(function(snap){
+    var all = snapToArray(snap), sent = [];
+    var gotDraft = false;
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].id === "draft") { gotDraft = true; draft = normalizeDraft(all[i]); }
+      else sent.push(all[i]);
+    }
+    if (!gotDraft) draft = normalizeDraft({});
+    sent.sort(function(a,b){ return (b.ts || 0) - (a.ts || 0); });
+    supplierOrders = sent;
+    renderAll();
+  }, function(err){ showError("Φόρτωση παραγγελιών προμηθευτή", err); });
 
   subscribeToday();
   subscribeReport();
@@ -768,6 +861,118 @@ function deleteProduct(id){
   return productsCol().doc(id).delete();
 }
 
+/* ---------- Παραγγελία προμηθευτή ---------- */
+function normalizeDraft(d){
+  return {
+    lines: (d && d.lines) || {},
+    supplier: (d && d.supplier) || "",
+    supplierInfo: (d && d.supplierInfo) || "",
+    notes: (d && d.notes) || ""
+  };
+}
+/* Κλειδί γραμμής: productId + "|" + μέγεθος. Ένα flat map αντί για nested,
+   ώστε να γράφεται ολόκληρο με ένα set() — βλ. saveDraft. */
+function lineKey(pid, size){ return pid + "|" + size; }
+function draftQty(pid, size){ return draft.lines[lineKey(pid, size)] || 0; }
+
+/* Γράφουμε ΟΛΟΚΛΗΡΟ το draft doc (set χωρίς merge). Με merge:true τα
+   nested maps συγχωνεύονται, άρα μια γραμμή που μηδενίστηκε δεν θα
+   έφευγε ποτέ από το Firestore. Το local draft ενημερώνεται αμέσως
+   (optimistic), ώστε τα +/− να αντιδρούν χωρίς να περιμένουν δίκτυο. */
+function saveDraft(){
+  renderAll();
+  if (!db) return;
+  supplierOrdersCol().doc("draft").set({
+    status: "draft",
+    lines: draft.lines,
+    supplier: draft.supplier,
+    supplierInfo: draft.supplierInfo,
+    notes: draft.notes,
+    ts: Date.now()
+  }).catch(function(err){ showError("Αποθήκευση καλαθιού", err); });
+}
+function setDraftQty(pid, size, qty){
+  qty = Math.max(0, Math.min(9999, parseInt(qty, 10) || 0));
+  var k = lineKey(pid, size);
+  if (qty > 0) draft.lines[k] = qty; else delete draft.lines[k];
+  saveDraft();
+}
+
+/* Γραμμές καλαθιού με τα στοιχεία του προϊόντος. Γραμμές για προϊόν που
+   σβήστηκε στο μεταξύ αγνοούνται (δεν έχουμε πια όνομα/κωδικό να στείλουμε). */
+function draftLines(){
+  var out = [];
+  for (var k in draft.lines) {
+    if (!draft.lines.hasOwnProperty(k)) continue;
+    var cut = k.indexOf("|"), pid = k.slice(0, cut), size = k.slice(cut + 1);
+    var p = findProduct(pid);
+    if (!p || !(draft.lines[k] > 0)) continue;
+    out.push({ productId: pid, name: p.name, code: p.code || "", category: p.category || "", size: size, qty: draft.lines[k] });
+  }
+  return out;
+}
+
+/* Αριθμός παραγγελίας: ΕΤΟΣ-ΑΑΑ, αύξων ανά έτος (π.χ. 2026-003).
+   Υπολογίζεται από το ιστορικό στον client: υπάρχει ένας μόνο χρήστης που
+   ολοκληρώνει παραγγελίες (ο ιδιοκτήτης), άρα δεν χρειάζεται counter με
+   transaction. */
+function nextOrderNumber(){
+  var y = new Date().getFullYear(), max = 0;
+  for (var i = 0; i < supplierOrders.length; i++) {
+    var o = supplierOrders[i];
+    if (o.year === y && o.seq > max) max = o.seq;
+  }
+  var seq = max + 1;
+  return { year: y, seq: seq, number: y + "-" + (seq < 10 ? "00" : seq < 100 ? "0" : "") + seq };
+}
+
+/* Ολοκλήρωση: η παραγγελία αποθηκεύεται ως ΣΤΙΓΜΙΟΤΥΠΟ (όνομα, κωδικός,
+   κατηγορία ανά γραμμή), ώστε το PDF του ιστορικού να βγαίνει ίδιο ακόμα
+   κι αν αργότερα αλλάξει ή σβηστεί το προϊόν. Οι φωτογραφίες ΔΕΝ
+   αντιγράφονται (θα ξεπερνούσαν εύκολα το όριο 1MB του doc)· στο PDF
+   μπαίνει η τρέχουσα φωτογραφία, αν το προϊόν υπάρχει ακόμα.
+   Batch: νέο doc + άδειασμα καλαθιού γίνονται μαζί ή καθόλου. */
+function finalizeOrder(){
+  var lines = draftLines();
+  if (!lines.length) return Promise.reject(new Error("Το καλάθι είναι άδειο."));
+  var n = nextOrderNumber();
+  var order = {
+    status: "sent", number: n.number, year: n.year, seq: n.seq,
+    ts: Date.now(), day: dayKey(new Date()),
+    supplier: draft.supplier, supplierInfo: draft.supplierInfo, notes: draft.notes,
+    lines: lines
+  };
+  /* Κρατάμε τον προμηθευτή στο νέο καλάθι: συνήθως είναι ο ίδιος. */
+  var emptyDraft = { status: "draft", lines: {}, supplier: draft.supplier, supplierInfo: draft.supplierInfo, notes: "", ts: Date.now() };
+
+  if (!db) {
+    order.id = newId();
+    supplierOrders.unshift(order);
+    draft = normalizeDraft(emptyDraft);
+    renderAll();
+    return Promise.resolve(order);
+  }
+  var ref = supplierOrdersCol().doc();
+  var batch = db.batch();
+  batch.set(ref, order);
+  batch.set(supplierOrdersCol().doc("draft"), emptyDraft);
+  return batch.commit().then(function(){ order.id = ref.id; return order; });
+}
+
+function deleteSupplierOrder(id){
+  if (!db) {
+    supplierOrders = supplierOrders.filter(function(o){ return o.id !== id; });
+    renderAll();
+    return Promise.resolve();
+  }
+  return supplierOrdersCol().doc(id).delete();
+}
+
+function saveStoreInfo(store){
+  if (!db) { settings.store = store; renderAll(); return Promise.resolve(); }
+  return settingsDoc().set({ store: store }, { merge: true });
+}
+
 function saveEmployeePin(pin){
   if (!db) { settings.employeePin = pin; renderAll(); return Promise.resolve(); }
   return settingsDoc().set({ employeePin: pin }, { merge: true });
@@ -823,7 +1028,7 @@ function savedRole(){
    ========================================================================== */
 var TABS = {
   employee: [["sell","Πώληση"],["shift","Η βάρδια μου"]],
-  owner:    [["report","Αναφορά βάρδιας"],["stock","Απόθεμα"],["sell","Πώληση"],["settings","Ρυθμίσεις"]]
+  owner:    [["report","Αναφορά βάρδιας"],["stock","Απόθεμα"],["order","Παραγγελία"],["sell","Πώληση"],["settings","Ρυθμίσεις"]]
 };
 
 function renderAll(){
@@ -838,9 +1043,13 @@ function renderAll(){
 
   /* Κρατάμε focus/θέση cursor στο πεδίο αναζήτησης: αλλιώς κάθε snapshot
      (π.χ. πώληση από άλλη συσκευή) θα έκλεινε το πληκτρολόγιο στο κινητό. */
+  /* Κρατάμε focus/θέση cursor σε όποιο πεδίο με id γράφει ο χρήστης
+     (αναζήτηση, ποσότητες παραγγελίας, σημειώσεις): αλλιώς κάθε snapshot
+     (π.χ. πώληση από άλλη συσκευή) θα έκλεινε το πληκτρολόγιο στο κινητό. */
   var active = document.activeElement;
-  var keepSearch = active && active.id === "search";
-  var caret = keepSearch ? active.selectionStart : 0;
+  var keepId = (active && active.id && $("view").contains(active)) ? active.id : null;
+  var caret = null;
+  try { caret = keepId ? active.selectionStart : null; } catch (e) { caret = null; }
 
   var v = $("view");
   if (tab === "sell") v.innerHTML = renderSell();
@@ -848,8 +1057,12 @@ function renderAll(){
   else if (tab === "report") v.innerHTML = renderReport();
   else if (tab === "stock") v.innerHTML = renderStock();
   else if (tab === "settings") v.innerHTML = renderSettings();
+  else if (tab === "order") v.innerHTML = renderOrder();
 
-  if (keepSearch && $("search")) { $("search").focus(); try { $("search").setSelectionRange(caret, caret); } catch (e) {} }
+  if (keepId && $(keepId)) {
+    $(keepId).focus();
+    if (caret !== null) { try { $(keepId).setSelectionRange(caret, caret); } catch (e) {} }
+  }
 }
 
 function matchesSearch(p){
@@ -1244,7 +1457,202 @@ function confirmInline(btn, label){
   return false;
 }
 
+/* ---------- Παραγγελία προμηθευτή (ιδιοκτήτης) ---------- */
+
+/* Μεγέθη που προσφέρονται για παραγγελία σε ένα προϊόν: όσα έχει ήδη ΣΥΝ
+   τα προεπιλεγμένα της κατηγορίας του. Έτσι μπορεί να παραγγείλει π.χ. 3XL
+   ακόμα κι αν δεν το είχε ποτέ πριν στο απόθεμα. */
+function orderSizesFor(p){
+  var out = [], seen = {}, sz = p.sizes || [], pre = CATEGORY_SIZES[p.category] || [];
+  for (var i = 0; i < sz.length; i++) if (!seen[sz[i].s]) { seen[sz[i].s] = 1; out.push(sz[i].s); }
+  for (var j = 0; j < pre.length; j++) if (!seen[pre[j]]) { seen[pre[j]] = 1; out.push(pre[j]); }
+  out.sort(function(a,b){ return (sizeRank(a) - sizeRank(b)) || String(a).localeCompare(String(b)); });
+  return out;
+}
+/* id για κάθε input ποσότητας, ώστε η renderAll να κρατάει το focus. */
+function qtyInputId(pid, size){ return "oq_" + pid + "_" + String(size).replace(/[^A-Za-z0-9]/g, "_"); }
+
+function renderOrder(){
+  var lines = draftLines(), pieces = 0, byProd = {}, prodOrder = [];
+  for (var i = 0; i < lines.length; i++) {
+    pieces += lines[i].qty;
+    if (!byProd[lines[i].productId]) { byProd[lines[i].productId] = []; prodOrder.push(lines[i].productId); }
+    byProd[lines[i].productId].push(lines[i]);
+  }
+
+  var h = '<div class="row"><h2>Παραγγελία προμηθευτή</h2></div>';
+
+  /* Στοιχεία προμηθευτή + σημειώσεις (αποθηκεύονται με το change, όχι σε
+     κάθε πλήκτρο, για να μη γίνεται write ανά χαρακτήρα). */
+  h += '<div class="ord-top"><div class="card pad">' +
+    '<label class="f">Προμηθευτής</label><input type="text" id="ordSupplier" value="' + esc(draft.supplier) + '" placeholder="Επωνυμία προμηθευτή">' +
+    '<label class="f" style="margin-top:10px">Στοιχεία επικοινωνίας προμηθευτή</label><input type="text" id="ordSupplierInfo" value="' + esc(draft.supplierInfo) + '" placeholder="Τηλέφωνο / email (προαιρετικά)">' +
+    '</div><div class="card pad"><label class="f">Σημειώσεις παραγγελίας</label>' +
+    '<textarea id="ordNotes" rows="4" placeholder="π.χ. επιθυμητή ημερομηνία παράδοσης">' + esc(draft.notes) + '</textarea></div></div>';
+
+  /* Καλάθι */
+  h += '<div class="card pad" style="margin-bottom:16px"><div class="row"><h3 style="margin:0">Καλάθι</h3>' +
+    '<span class="muted">' + prodOrder.length + ' είδη · ' + pieces + ' τεμάχια</span><span class="spacer"></span>' +
+    '<button class="btn" data-ordpreview' + (lines.length ? '' : ' disabled') + '>Προεπισκόπηση PDF</button>' +
+    '<button class="btn primary" data-ordfinal' + (lines.length ? '' : ' disabled') + '>Ολοκλήρωση & PDF</button></div>';
+  if (!lines.length) {
+    h += '<div class="muted" style="padding:12px 0 0">Άδειο. Προσθέστε ποσότητες από τη λίστα παρακάτω.</div>';
+  } else {
+    h += '<div style="margin-top:10px">';
+    prodOrder.sort(function(a,b){ return byProd[a][0].name.localeCompare(byProd[b][0].name, "el"); });
+    for (var pi = 0; pi < prodOrder.length; pi++) {
+      var ls = byProd[prodOrder[pi]], p0 = findProduct(prodOrder[pi]), tot = 0, chips = "";
+      ls.sort(function(a,b){ return sizeRank(a.size) - sizeRank(b.size); });
+      for (var li = 0; li < ls.length; li++) { tot += ls[li].qty; chips += '<span class="chip">' + esc(ls[li].size) + ' × ' + ls[li].qty + '</span>'; }
+      h += '<div class="basket-line">' + photoHtml(p0, "thumb") + '<div style="flex:1"><b>' + esc(ls[0].name) + '</b>' +
+        (ls[0].code ? ' <span class="muted">' + esc(ls[0].code) + '</span>' : '') + '<div>' + chips + '</div></div>' +
+        '<b>' + tot + '</b><button class="btn small" data-ordclear="' + esc(prodOrder[pi]) + '" title="Αφαίρεση από το καλάθι">×</button></div>';
+    }
+    h += '<div class="row" style="margin-top:10px"><span class="spacer"></span><button class="btn small danger" data-ordempty>Άδειασμα καλαθιού</button></div></div>';
+  }
+  h += '</div>';
+
+  /* Λίστα προϊόντων με απόθεμα + ποσότητα προς παραγγελία */
+  h += '<h3>Προσθήκη στο καλάθι</h3>' + searchBox("Αναζήτηση ρούχου ή κωδικού στάμπας…") + catBar();
+  var list = products.filter(matchesSearch);
+  if (!list.length) {
+    h += '<div class="card empty" style="margin-top:12px">' + (products.length ? 'Κανένα αποτέλεσμα.' : 'Δεν υπάρχουν ακόμα ρούχα στο Απόθεμα.') + '</div>';
+  } else {
+    h += '<div class="card" style="margin-top:12px">';
+    for (var j = 0; j < list.length; j++) {
+      var p = list[j], sizes = orderSizesFor(p), has = false, cells = "";
+      for (var k = 0; k < sizes.length; k++) {
+        var s = sizes[k], st = sizeQty(p, s), q = draftQty(p.id, s);
+        if (q) has = true;
+        cells += '<div class="osz' + (q ? ' on' : '') + '"><div class="l">' + esc(s) + '</div>' +
+          '<div class="st' + (st <= 0 ? ' zero' : '') + '">απόθεμα ' + st + '</div>' +
+          '<div class="step"><button data-oq="' + esc(p.id) + '" data-os="' + esc(s) + '" data-d="-1" aria-label="λιγότερα">−</button>' +
+          '<input type="number" min="0" inputmode="numeric" id="' + qtyInputId(p.id, s) + '" data-oqin="' + esc(p.id) + '" data-os="' + esc(s) + '" value="' + (q || "") + '" placeholder="0">' +
+          '<button data-oq="' + esc(p.id) + '" data-os="' + esc(s) + '" data-d="1" aria-label="περισσότερα">+</button></div></div>';
+      }
+      h += '<div class="ord-prod' + (has ? ' has' : '') + '">' + photoHtml(p, "thumb") +
+        '<div><b>' + esc(p.name) + '</b> <span class="muted">' + esc([p.code, p.category].filter(Boolean).join(" · ")) +
+        ' · σύνολο αποθέματος ' + totalStock(p) + '</span><div class="ord-sizes">' + cells + '</div></div></div>';
+    }
+    h += '</div>';
+  }
+
+  /* Ιστορικό */
+  h += '<h3 style="margin-top:24px">Ιστορικό παραγγελιών</h3>';
+  if (!supplierOrders.length) {
+    h += '<div class="card empty">Καμία ολοκληρωμένη παραγγελία ακόμα.</div>';
+  } else {
+    h += '<div class="card"><table class="t"><thead><tr><th>Αρ.</th><th>Ημερομηνία</th><th>Προμηθευτής</th><th class="num">Τεμάχια</th><th></th></tr></thead><tbody>';
+    for (var o = 0; o < supplierOrders.length; o++) {
+      var so = supplierOrders[o], pc = 0;
+      for (var x = 0; x < (so.lines || []).length; x++) pc += so.lines[x].qty;
+      h += '<tr><td><b>' + esc(so.number) + '</b></td><td>' + esc(so.day ? dayLabel(so.day) : "") + '</td><td>' + esc(so.supplier || "—") + '</td>' +
+        '<td class="num">' + pc + '</td><td class="num"><button class="btn small" data-ordpdf="' + esc(so.id) + '">PDF</button> ' +
+        '<button class="btn small danger" data-orddel="' + esc(so.id) + '">Διαγραφή</button></td></tr>';
+    }
+    h += '</tbody></table></div>';
+  }
+  return h;
+}
+
+/* Έγγραφο A4 παραγγελίας. Ομαδοποίηση ανά κατηγορία, με ΔΙΚΟ ΤΗΣ πίνακα η
+   καθεμία: τα μεγέθη γίνονται στήλες (XS…3XL για ενηλίκων, 0-6…18-24 για
+   βρεφικά κ.λπ.), οπότε ο προμηθευτής βλέπει έναν καθαρό πίνακα ανά
+   προϊόν × μέγεθος — αντί για μια μακριά λίστα γραμμών. */
+function buildOrderDoc(order, isDraft){
+  var st = settings.store || {}, lines = order.lines || [];
+  var cats = {}, catOrder = [];
+  for (var i = 0; i < lines.length; i++) {
+    var c = lines[i].category || "Χωρίς κατηγορία";
+    if (!cats[c]) { cats[c] = { prods: {}, prodOrder: [], sizes: {}, sizeList: [] }; catOrder.push(c); }
+    var g = cats[c], pid = lines[i].productId;
+    if (!g.prods[pid]) { g.prods[pid] = { name: lines[i].name, code: lines[i].code, q: {}, tot: 0 }; g.prodOrder.push(pid); }
+    g.prods[pid].q[lines[i].size] = (g.prods[pid].q[lines[i].size] || 0) + lines[i].qty;
+    g.prods[pid].tot += lines[i].qty;
+    if (!g.sizes[lines[i].size]) { g.sizes[lines[i].size] = 1; g.sizeList.push(lines[i].size); }
+  }
+  function catIdx(c){ var x = CATEGORIES.indexOf(c); return x < 0 ? 99 : x; }
+  catOrder.sort(function(a,b){ return catIdx(a) - catIdx(b); });
+
+  var d = order.ts ? new Date(order.ts) : new Date();
+  var dateStr = pad2(d.getDate()) + "/" + pad2(d.getMonth()+1) + "/" + d.getFullYear();
+  var storeName = st.name || "ARCHES";
+  var storeLines = [st.address, st.phone ? "Τηλ. " + st.phone : "", st.email, st.vat ? "ΑΦΜ " + st.vat : ""].filter(Boolean);
+
+  var h = '<div class="pd"><div class="hd"><img src="' + $("app").querySelector(".logo").getAttribute("src") + '" alt="ARCHES">' +
+    '<div class="ttl"><h1>ΠΑΡΑΓΓΕΛΙΑ</h1><div class="meta">' +
+    (isDraft ? '<span class="draft-mark">ΠΡΟΣΧΕΔΙΟ</span>' : 'Αρ. <b>' + esc(order.number) + '</b>') +
+    ' · ' + dateStr + '</div></div></div>';
+
+  h += '<div class="parties"><div class="box"><div class="k">Από</div><b>' + esc(storeName) + '</b>' +
+    (storeLines.length ? '<br>' + storeLines.map(esc).join("<br>") : '') + '</div>' +
+    '<div class="box"><div class="k">Προς</div><b>' + esc(order.supplier || "—") + '</b>' +
+    (order.supplierInfo ? '<br>' + esc(order.supplierInfo) : '') + '</div></div>';
+
+  var grand = 0, grandProds = 0;
+  for (var ci = 0; ci < catOrder.length; ci++) {
+    var cg = cats[catOrder[ci]];
+    cg.sizeList.sort(function(a,b){ return (sizeRank(a) - sizeRank(b)) || String(a).localeCompare(String(b)); });
+    cg.prodOrder.sort(function(a,b){ return cg.prods[a].name.localeCompare(cg.prods[b].name, "el"); });
+    h += '<h3>' + esc(catOrder[ci]) + '</h3><table><thead><tr><th></th><th>Ρούχο</th><th>Κωδ. Στάμπας</th>';
+    for (var si = 0; si < cg.sizeList.length; si++) h += '<th class="q">' + esc(cg.sizeList[si]) + '</th>';
+    h += '<th class="tot">Σύνολο</th></tr></thead><tbody>';
+    var colTot = {}, catTot = 0;
+    for (var pj = 0; pj < cg.prodOrder.length; pj++) {
+      var pr = cg.prods[cg.prodOrder[pj]], cur = findProduct(cg.prodOrder[pj]);
+      h += '<tr><td class="ph">' + (cur && cur.photo ? '<img src="' + cur.photo + '" alt="">' : '') + '</td>' +
+        '<td>' + esc(pr.name) + '</td><td>' + esc(pr.code || "—") + '</td>';
+      for (var sk = 0; sk < cg.sizeList.length; sk++) {
+        var qv = pr.q[cg.sizeList[sk]] || 0;
+        colTot[cg.sizeList[sk]] = (colTot[cg.sizeList[sk]] || 0) + qv;
+        h += '<td class="q">' + (qv ? qv : '') + '</td>';
+      }
+      h += '<td class="tot">' + pr.tot + '</td></tr>';
+      catTot += pr.tot;
+    }
+    h += '<tr class="sum"><td></td><td colspan="2">Σύνολο ' + esc(catOrder[ci]) + '</td>';
+    for (var sm = 0; sm < cg.sizeList.length; sm++) h += '<td class="q">' + (colTot[cg.sizeList[sm]] || '') + '</td>';
+    h += '<td class="tot">' + catTot + '</td></tr></tbody></table>';
+    grand += catTot; grandProds += cg.prodOrder.length;
+  }
+
+  h += '<div class="grand"><span>Είδη: <b>' + grandProds + '</b></span><span>Σύνολο τεμαχίων: <b>' + grand + '</b></span></div>';
+  if (order.notes) h += '<div class="notes"><b>Σημειώσεις:</b>\n' + esc(order.notes) + '</div>';
+  h += '<div class="foot"><span>Παρακαλούμε επιβεβαιώστε διαθεσιμότητα και ημερομηνία παράδοσης.</span><span>' + esc(storeName) + '</span></div></div>';
+  return h;
+}
+
+/* Εκτύπωση → ο χρήστης διαλέγει «Αποθήκευση ως PDF» (desktop) ή
+   Κοινή χρήση → PDF (κινητό). Αλλάζουμε προσωρινά το document.title
+   γιατί από αυτό βγαίνει το προτεινόμενο όνομα αρχείου του PDF. */
+function printOrder(order, isDraft){
+  $("printDoc").innerHTML = buildOrderDoc(order, isDraft);
+  var oldTitle = document.title;
+  document.title = "ARCHES_Paraggelia_" + (isDraft ? "prosxedio_" + dayKey(new Date()) : order.number);
+  document.body.classList.add("print-order");
+  function cleanup(){
+    document.body.classList.remove("print-order");
+    document.title = oldTitle;
+    window.removeEventListener("afterprint", cleanup);
+  }
+  window.addEventListener("afterprint", cleanup);
+  /* Μικρή καθυστέρηση ώστε να "ζωγραφιστούν" οι φωτογραφίες πριν ανοίξει
+     ο διάλογος εκτύπωσης — αλλιώς σε κάποιους browsers βγαίνουν κενές. */
+  setTimeout(function(){
+    window.print();
+    /* Safari σε iOS δεν στέλνει πάντα afterprint· καθαρίζουμε και με timer. */
+    setTimeout(cleanup, 1500);
+  }, 300);
+}
+function findSupplierOrder(id){
+  for (var i = 0; i < supplierOrders.length; i++) if (supplierOrders[i].id === id) return supplierOrders[i];
+  return null;
+}
+
 /* ---------- Ρυθμίσεις (ιδιοκτήτης) ---------- */
+function storeField(id, label, val){
+  return '<div style="margin-bottom:10px"><label class="f">' + label + '</label><input type="text" id="' + id + '" value="' + esc(val || "") + '"></div>';
+}
 function renderSettings(){
   return '<h2>Ρυθμίσεις</h2><div class="card pad" style="max-width:420px">' +
     '<label class="f">PIN υπαλλήλου</label><div class="row" style="flex-wrap:nowrap">' +
@@ -1252,6 +1660,14 @@ function renderSettings(){
     '<button class="btn primary" data-savepin>Αποθήκευση</button></div>' +
     '<p class="muted" style="font-size:13px">Το PIN ιδιοκτήτη ορίζεται μέσα στον κώδικα (ADMIN_PIN). ' +
     'Τα PIN αποτρέπουν λάθη ρόλου — δεν είναι πραγματική προστασία δεδομένων.</p></div>' +
+    '<h3 style="margin-top:24px">Στοιχεία καταστήματος</h3><div class="card pad" style="max-width:520px">' +
+    '<p class="muted" style="font-size:13px;margin-top:0">Εμφανίζονται στο PDF της παραγγελίας προς τον προμηθευτή.</p>' +
+    storeField("stName", "Επωνυμία", (settings.store || {}).name || "ARCHES") +
+    storeField("stAddress", "Διεύθυνση", (settings.store || {}).address) +
+    storeField("stPhone", "Τηλέφωνο", (settings.store || {}).phone) +
+    storeField("stEmail", "Email", (settings.store || {}).email) +
+    storeField("stVat", "ΑΦΜ", (settings.store || {}).vat) +
+    '<button class="btn primary" data-savestore>Αποθήκευση στοιχείων</button></div>' +
     '<p class="muted" style="margin-top:20px;font-size:13px">' + (offline ? 'Κατάσταση: <b>offline mode</b>' : 'Κατάσταση: συνδεδεμένο στο Firestore (' + esc(FIREBASE_CONFIG.projectId) + ')') + '</p>';
 }
 
@@ -1295,6 +1711,14 @@ function bindEvents(){
     if (e.target.id === "search") { search = e.target.value; renderAll(); }
   });
   $("view").addEventListener("change", function(e){
+    /* Παραγγελία: πεδία κειμένου γράφονται στο change (blur), όχι ανά πλήκτρο. */
+    if (e.target.id === "ordSupplier") { draft.supplier = e.target.value.trim(); saveDraft(); return; }
+    if (e.target.id === "ordSupplierInfo") { draft.supplierInfo = e.target.value.trim(); saveDraft(); return; }
+    if (e.target.id === "ordNotes") { draft.notes = e.target.value; saveDraft(); return; }
+    if (e.target.hasAttribute && e.target.hasAttribute("data-oqin")) {
+      setDraftQty(e.target.getAttribute("data-oqin"), e.target.getAttribute("data-os"), e.target.value);
+      return;
+    }
     if (e.target.id === "reportDate" && e.target.value) {
       reportDay = e.target.value > currentDay ? currentDay : e.target.value;
       subscribeReport();
@@ -1305,6 +1729,53 @@ function bindEvents(){
     var b = e.target.closest ? e.target.closest("button") : null;
     if (b) {
       if (b.hasAttribute("data-cat")) { catFilter = b.getAttribute("data-cat"); renderAll(); return; }
+      if (b.hasAttribute("data-oq")) {
+        var pid = b.getAttribute("data-oq"), sz = b.getAttribute("data-os");
+        setDraftQty(pid, sz, draftQty(pid, sz) + (+b.getAttribute("data-d")));
+        return;
+      }
+      if (b.hasAttribute("data-ordclear")) {
+        var cp = b.getAttribute("data-ordclear") + "|";
+        for (var lk in draft.lines) if (draft.lines.hasOwnProperty(lk) && lk.indexOf(cp) === 0) delete draft.lines[lk];
+        saveDraft();
+        return;
+      }
+      if (b.hasAttribute("data-ordempty")) {
+        if (!confirmInline(b, "Σίγουρα;")) return;
+        draft.lines = {};
+        saveDraft();
+        return;
+      }
+      if (b.hasAttribute("data-ordpreview")) {
+        printOrder({ lines: draftLines(), supplier: draft.supplier, supplierInfo: draft.supplierInfo, notes: draft.notes, ts: Date.now() }, true);
+        return;
+      }
+      if (b.hasAttribute("data-ordfinal")) {
+        if (!confirmInline(b, "Επιβεβαίωση ολοκλήρωσης")) return;
+        b.disabled = true;
+        finalizeOrder().then(function(order){
+          showOk("Η παραγγελία " + order.number + " ολοκληρώθηκε.");
+          printOrder(order, false);
+        }, function(err){ b.disabled = false; showError("Ολοκλήρωση παραγγελίας", err); });
+        return;
+      }
+      if (b.hasAttribute("data-ordpdf")) {
+        var so = findSupplierOrder(b.getAttribute("data-ordpdf"));
+        if (so) printOrder(so, false);
+        return;
+      }
+      if (b.hasAttribute("data-orddel")) {
+        if (!confirmInline(b, "Σίγουρα;")) return;
+        deleteSupplierOrder(b.getAttribute("data-orddel")).then(function(){ showOk("Η παραγγελία διαγράφηκε."); }, function(err){ showError("Διαγραφή παραγγελίας", err); });
+        return;
+      }
+      if (b.hasAttribute("data-savestore")) {
+        saveStoreInfo({
+          name: $("stName").value.trim(), address: $("stAddress").value.trim(), phone: $("stPhone").value.trim(),
+          email: $("stEmail").value.trim(), vat: $("stVat").value.trim()
+        }).then(function(){ showOk("Τα στοιχεία αποθηκεύτηκαν."); }, function(err){ showError("Στοιχεία καταστήματος", err); });
+        return;
+      }
       if (b.hasAttribute("data-sell")) { openSellModal(b.getAttribute("data-sell"), b.getAttribute("data-size")); return; }
       if (b.hasAttribute("data-undo")) {
         if (!confirmInline(b, "Σίγουρα;")) return;
