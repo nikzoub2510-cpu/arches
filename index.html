@@ -378,9 +378,18 @@ var LOW_STOCK = 2;
 
 /* Έκδοση: εμφανίζεται κάτω από το κουμπί Είσοδος, ώστε να φαίνεται αμέσως
    αν ο browser / το GitHub Pages σερβίρει την τελευταία έκδοση ή παλιά από cache. */
-var APP_VERSION = "v9 · 14/11 20:10";
+var APP_VERSION = "v10 · 14/11 20:20";
 
 var LS_ROLE = "arches.role"; /* localStorage key: κάθε συσκευή θυμάται τον ρόλο της */
+
+/* «Αποσύνδεση όλων των συσκευών»: δεν υπάρχει server/sessions (μόνο PIN +
+   localStorage), οπότε χρησιμοποιούμε έναν μετρητή στο Firestore
+   (settings/app.logoutGen). Κάθε συσκευή θυμάται την τιμή του μετρητή τη
+   στιγμή που συνδέθηκε. Όταν ο ιδιοκτήτης τον αυξήσει, ο listener των
+   ρυθμίσεων σε ΚΑΘΕ ανοιχτή συσκευή βλέπει μεγαλύτερη τιμή και τη βγάζει
+   στην οθόνη PIN· μια κλειστή συσκευή θα βγει μόλις ανοίξει ξανά.
+   Μετρητής και όχι ώρα, γιατί τα ρολόγια των συσκευών μπορεί να διαφέρουν. */
+var LS_GEN = "arches.loginGen";
 
 /* Σταθερές κατηγορίες καταστήματος. Είναι λίστα στον κώδικα (όχι ελεύθερο
    κείμενο) ώστε να μη δημιουργούνται "Φούτερ" / "φουτερ" / "Φουτερ" ως
@@ -436,7 +445,8 @@ var offline = false;
 var products = [];        /* {id,name,code,category,sizes:[{s,q}],ts} */
 var todaySales = [];      /* πωλήσεις της σημερινής βάρδιας */
 var reportSales = [];     /* πωλήσεις της ημέρας που βλέπει ο ιδιοκτήτης στην Αναφορά */
-var settings = { employeePin: DEFAULT_EMPLOYEE_PIN, store: {} };
+var settings = { employeePin: DEFAULT_EMPLOYEE_PIN, store: {}, logoutGen: 0 };
+var settingsLoaded = false; /* έχει έρθει το 1ο snapshot των ρυθμίσεων; */
 
 /* Παραγγελίες προμηθευτή.
    - draft: το "καλάθι" που μαζεύει ο ιδιοκτήτης. Ζει στο Firestore (doc
@@ -609,6 +619,13 @@ function startListeners(){
     var d = doc.exists ? doc.data() : {};
     settings.employeePin = d.employeePin || DEFAULT_EMPLOYEE_PIN;
     settings.store = d.store || {};
+    settings.logoutGen = d.logoutGen || 0;
+    settingsLoaded = true;
+    if (role && storedGen() < settings.logoutGen) {
+      closeModal();
+      setRole(null);
+      showBanner("offline", "Ο ιδιοκτήτης αποσύνδεσε όλες τις συσκευές. Συνδεθείτε ξανά με το PIN σας.");
+    }
     renderAll();
   }, function(err){ showError("Φόρτωση ρυθμίσεων", err); });
 
@@ -972,6 +989,18 @@ function deleteSupplierOrder(id){
   return supplierOrdersCol().doc(id).delete();
 }
 
+/* increment() στον server: αν δύο συσκευές το πατήσουν ταυτόχρονα, ο
+   μετρητής ανεβαίνει σωστά και για τις δύο. Η τρέχουσα συσκευή βγαίνει
+   κι αυτή, μέσω του ίδιου listener (το local snapshot έρχεται αμέσως). */
+function logoutAllDevices(){
+  if (!db) {
+    settings.logoutGen = (settings.logoutGen || 0) + 1;
+    setRole(null);
+    return Promise.resolve();
+  }
+  return settingsDoc().set({ logoutGen: firebase.firestore.FieldValue.increment(1) }, { merge: true });
+}
+
 function saveStoreInfo(store){
   if (!db) { settings.store = store; renderAll(); return Promise.resolve(); }
   return settingsDoc().set({ store: store }, { merge: true });
@@ -1001,10 +1030,18 @@ function selectLoginRole(r){
   var btns = document.querySelectorAll(".roles button");
   for (var i = 0; i < btns.length; i++) btns[i].classList.toggle("sel", btns[i].getAttribute("data-role") === r);
 }
+function storedGen(){
+  try { return parseInt(localStorage.getItem(LS_GEN), 10) || 0; } catch (e) { return 0; }
+}
 function tryLogin(){
+  /* Περιμένουμε τις ρυθμίσεις: χωρίς αυτές δεν ξέρουμε ούτε το τρέχον PIN
+     υπαλλήλου ούτε τον μετρητή αποσύνδεσης — αν κρατούσαμε μετρητή 0,
+     η συσκευή θα αποσυνδεόταν αμέσως μόλις έρθει το snapshot. */
+  if (db && !settingsLoaded) { $("loginErr").textContent = "Σύνδεση με τη βάση… δοκιμάστε ξανά σε λίγα δευτερόλεπτα."; return; }
   var pin = $("pin").value;
   var ok = loginRole === "owner" ? (pin === ADMIN_PIN) : (pin === settings.employeePin);
   if (!ok) { $("loginErr").textContent = "Λάθος PIN."; $("pin").value = ""; return; }
+  try { localStorage.setItem(LS_GEN, String(settings.logoutGen)); } catch (e) {}
   setRole(loginRole);
 }
 function setRole(r){
@@ -1854,6 +1891,11 @@ function renderSettings(){
     storeField("stEmail", "Email", (settings.store || {}).email) +
     storeField("stVat", "ΑΦΜ", (settings.store || {}).vat) +
     '<button class="btn primary" data-savestore>Αποθήκευση στοιχείων</button></div>' +
+    '<h3 style="margin-top:24px">Συσκευές</h3><div class="card pad" style="max-width:520px">' +
+    '<p style="margin-top:0">Αποσυνδέει <b>όλους</b> τους χρήστες (υπάλληλο και ιδιοκτήτη) από <b>όλες</b> τις συσκευές, ' +
+    'και από αυτή εδώ. Θα χρειαστεί ξανά PIN για είσοδο.</p>' +
+    '<p class="muted" style="font-size:13px">Αν θέλετε να μην μπορεί να ξαναμπεί κάποιος (π.χ. πρώην υπάλληλος), αλλάξτε πρώτα το PIN υπαλλήλου παραπάνω.</p>' +
+    '<button class="btn danger" data-logoutall>Αποσύνδεση από όλες τις συσκευές</button></div>' +
     '<p class="muted" style="margin-top:20px;font-size:13px">' + (offline ? 'Κατάσταση: <b>offline mode</b>' : 'Κατάσταση: συνδεδεμένο στο Firestore (' + esc(FIREBASE_CONFIG.projectId) + ')') + '</p>';
 }
 
@@ -1957,6 +1999,12 @@ function bindEvents(){
       if (b.hasAttribute("data-orddel")) {
         if (!confirmInline(b, "Σίγουρα;")) return;
         deleteSupplierOrder(b.getAttribute("data-orddel")).then(function(){ showOk("Η παραγγελία διαγράφηκε."); }, function(err){ showError("Διαγραφή παραγγελίας", err); });
+        return;
+      }
+      if (b.hasAttribute("data-logoutall")) {
+        if (!confirmInline(b, "Πατήστε ξανά για επιβεβαίωση")) return;
+        b.disabled = true;
+        logoutAllDevices().then(null, function(err){ b.disabled = false; showError("Αποσύνδεση συσκευών", err); });
         return;
       }
       if (b.hasAttribute("data-savestore")) {
