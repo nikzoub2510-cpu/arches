@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#faf8f5">
+<title>ARCHES · Απόθεμα & Βάρδιες</title>
+<!--
+  Firebase compat SDK (ΟΧΙ το modular v9+).
+  Γιατί compat: δίνει global `firebase` χωρίς imports/modules, άρα δουλεύει
+  μέσα σε ένα μόνο στατικό index.html χωρίς build step / bundler.
+  Αν το CDN δεν φορτώσει, το `firebase` μένει undefined και η εφαρμογή
+  πέφτει σε offline mode (βλ. initFirebase) αντί να σπάσει.
+-->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<style>
+/* ==========================================================================
+   DESIGN TOKENS
+   Όλα τα χρώματα/typography ζουν εδώ ως custom properties, ώστε το dark mode
+   να είναι απλώς ένα override block και να μην υπάρχουν literals σκορπισμένα.
+   Η παλέτα ακολουθεί το logo ARCHES: μαύρο μελάνι σε ζεστό λευκό, serif.
+   ========================================================================== */
+:root{
+  --bg:#faf8f5;
+  --surface:#ffffff;
+  --surface-2:#f3f0eb;
+  --ink:#151515;
+  --ink-2:#5b5752;
+  --ink-3:#8f8a83;
+  --line:#e4dfd8;
+  --accent:#151515;          /* κύρια κουμπιά: μαύρο όπως το logo */
+  --accent-ink:#ffffff;
+  --warn:#9a6b00;
+  --warn-bg:#fff4d6;
+  --danger:#b3261e;
+  --danger-bg:#fdecea;
+  --ok:#2e6b3a;
+  --ok-bg:#e7f3e9;
+  --undo:#b3261e;             /* χρώμα αστερίσκου αναίρεσης */
+  --logo-filter:none;         /* στο dark mode αντιστρέφουμε το μαύρο logo */
+  --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-serif:Georgia,"Times New Roman",serif;
+  --radius:12px;
+  --radius-sm:8px;
+  --shadow:0 1px 2px rgba(0,0,0,.05),0 4px 14px rgba(0,0,0,.05);
+}
+/* Dark mode: ακολουθεί το σύστημα, ΚΑΙ μπορεί να εξαναγκαστεί με
+   data-theme="dark" στο <html> (για μελλοντικό toggle χωρίς αλλαγή CSS). */
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121212; --surface:#1b1b1b; --surface-2:#242424;
+    --ink:#f2efea; --ink-2:#bdb7ae; --ink-3:#8a847c; --line:#2f2f2f;
+    --accent:#f2efea; --accent-ink:#121212;
+    --warn:#f0c14b; --warn-bg:#3a2f12; --danger:#ff8a80; --danger-bg:#3b1a18;
+    --ok:#8fd19e; --ok-bg:#16301c; --undo:#ff8a80;
+    --logo-filter:invert(1);
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121212; --surface:#1b1b1b; --surface-2:#242424;
+  --ink:#f2efea; --ink-2:#bdb7ae; --ink-3:#8a847c; --line:#2f2f2f;
+  --accent:#f2efea; --accent-ink:#121212;
+  --warn:#f0c14b; --warn-bg:#3a2f12; --danger:#ff8a80; --danger-bg:#3b1a18;
+  --ok:#8fd19e; --ok-bg:#16301c; --undo:#ff8a80;
+  --logo-filter:invert(1);
+  --shadow:none;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-sans);font-size:15px;line-height:1.45;-webkit-text-size-adjust:100%}
+button,input,select{font:inherit;color:inherit}
+.hidden{display:none !important}
+
+/* ---------- Banners (offline / error / ok) ---------- */
+#banners{position:sticky;top:0;z-index:50}
+/* Τα μηνύματα επιτυχίας είναι toasts κάτω-κάτω: δεν σπρώχνουν το περιεχόμενο
+   όπως τα error/offline banners, που πρέπει να μένουν μέχρι να τα δει κάποιος. */
+#toasts{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;gap:6px;width:min(92vw,420px);pointer-events:none}
+#toasts .banner{border:0;border-radius:var(--radius-sm);box-shadow:var(--shadow);pointer-events:auto}
+.banner{padding:10px 16px;font-size:14px;display:flex;gap:10px;align-items:flex-start;border-bottom:1px solid var(--line)}
+.banner b{font-weight:600}
+.banner .x{margin-left:auto;background:none;border:0;cursor:pointer;font-size:18px;line-height:1;color:inherit;padding:0 4px}
+.banner.offline{background:var(--warn-bg);color:var(--warn)}
+.banner.error{background:var(--danger-bg);color:var(--danger)}
+.banner.ok{background:var(--ok-bg);color:var(--ok)}
+
+/* ---------- Header ---------- */
+header.app{display:flex;align-items:center;gap:16px;padding:14px 24px;background:var(--surface);border-bottom:1px solid var(--line)}
+.logo{height:40px;filter:var(--logo-filter);display:block}
+header.app .who{margin-left:auto;display:flex;align-items:center;gap:10px;color:var(--ink-2);font-size:14px}
+.pill{display:inline-block;padding:3px 10px;border-radius:999px;background:var(--surface-2);color:var(--ink-2);font-size:12px;letter-spacing:.04em;text-transform:uppercase}
+
+nav.tabs{display:flex;gap:4px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--line);overflow-x:auto}
+nav.tabs button{background:none;border:0;padding:12px 14px;cursor:pointer;color:var(--ink-3);border-bottom:2px solid transparent;white-space:nowrap}
+nav.tabs button.active{color:var(--ink);border-bottom-color:var(--ink)}
+
+main{max-width:1100px;margin:0 auto;padding:24px}
+h1,h2,h3{font-family:var(--font-serif);font-weight:normal;margin:0 0 12px}
+h2{font-size:24px}
+h3{font-size:18px}
+.muted{color:var(--ink-3)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.spacer{flex:1}
+
+/* ---------- Controls ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 16px;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--surface);cursor:pointer;min-height:42px}
+.btn:hover{border-color:var(--ink-3)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--danger);border-color:var(--danger)}
+.btn.small{padding:6px 10px;min-height:34px;font-size:13px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+input[type=text],input[type=search],input[type=number],input[type=password],input[type=date]{
+  padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);min-height:42px;width:100%}
+input:focus{outline:2px solid var(--ink);outline-offset:-1px}
+label.f{display:block;font-size:13px;color:var(--ink-2);margin:0 0 4px}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.pad{padding:16px}
+.empty{padding:32px;text-align:center;color:var(--ink-3)}
+
+/* ---------- Login ---------- */
+#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+#login .box{width:100%;max-width:380px;text-align:center}
+#login .logo{height:64px;margin:0 auto 28px}
+.roles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.roles button{padding:18px 10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);cursor:pointer}
+.roles button.sel{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.roles .t{font-family:var(--font-serif);font-size:18px;display:block}
+.roles .s{font-size:12px;color:var(--ink-3)}
+#pin{text-align:center;letter-spacing:.5em;font-size:22px}
+.login-err{color:var(--danger);font-size:14px;min-height:20px;margin:8px 0}
+
+/* ---------- Πώληση: grid προϊόντων ---------- */
+.prod-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:16px}
+.prod{padding:14px}
+.prod .name{font-family:var(--font-serif);font-size:17px}
+.prod .meta{font-size:12px;color:var(--ink-3);margin-bottom:10px}
+.sizes{display:flex;flex-wrap:wrap;gap:6px}
+.size{min-width:54px;padding:8px 8px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);cursor:pointer;text-align:center;line-height:1.15}
+.size .l{display:block;font-weight:600}
+.size .q{display:block;font-size:11px;color:var(--ink-3)}
+.size:hover{border-color:var(--ink)}
+.size.zero{opacity:.4;cursor:not-allowed}
+.size.low .q{color:var(--warn)}
+
+/* ---------- Πίνακες / λίστες ---------- */
+table.t{width:100%;border-collapse:collapse}
+table.t th,table.t td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+table.t th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);font-weight:600}
+table.t td.num,table.t th.num{text-align:right;white-space:nowrap}
+tr.undone td{color:var(--ink-3)}
+tr.undone .strike{text-decoration:line-through}
+.star{color:var(--undo);font-weight:700}
+.chip{display:inline-block;padding:1px 7px;border:1px solid var(--line);border-radius:6px;font-size:12px;margin:2px 4px 2px 0;white-space:nowrap}
+.chip.zero{color:var(--danger);border-color:var(--danger)}
+
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0}
+.stat{padding:14px 16px}
+.stat .v{font-family:var(--font-serif);font-size:28px}
+.stat .k{font-size:12px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em}
+
+/* ---------- Modal ---------- */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:16px;z-index:100}
+.modal{width:100%;max-width:520px;max-height:92vh;overflow:auto}
+.modal h3{margin-bottom:4px}
+.qty{display:flex;align-items:center;justify-content:center;gap:16px;margin:20px 0}
+.qty button{width:52px;height:52px;border-radius:50%;font-size:24px}
+.qty .v{font-family:var(--font-serif);font-size:40px;min-width:60px;text-align:center}
+.size-rows .sr{display:grid;grid-template-columns:1fr 110px 40px;gap:8px;margin-bottom:8px;align-items:center}
+
+/* Expand/collapse: σε desktop όλα ανοιχτά, σε mobile κλειστά (βλ. media query) */
+.exp-toggle{display:none}
+
+/* ==========================================================================
+   MOBILE (≤900px): αλλάζει layout, όχι απλώς μικραίνει.
+   Οι πίνακες γίνονται compact κάρτες με tap-to-expand, γιατί μια γραμμή
+   προϊόντος με 8 μεγέθη δεν χωράει οριζόντια σε κινητό.
+   ========================================================================== */
+@media (max-width:900px){
+  header.app{padding:10px 14px}
+  .logo{height:30px}
+  nav.tabs{padding:0 8px}
+  main{padding:14px}
+  .prod-grid{grid-template-columns:1fr}
+  .stats{grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .stat{padding:10px}
+  .stat .v{font-size:22px}
+
+  table.t.cards thead{display:none}
+  table.t.cards,table.t.cards tbody{display:block}
+  table.t.cards tr{display:block;border:1px solid var(--line);border-radius:var(--radius-sm);margin-bottom:8px;background:var(--surface);padding:10px 12px;cursor:pointer}
+  table.t.cards td{display:block;border:0;padding:2px 0}
+  /* Μόνο τα κελιά .primary φαίνονται σε κλειστή κάρτα· τα υπόλοιπα με tap. */
+  /* .act = κουμπί ενέργειας (π.χ. Αναίρεση): πάντα ορατό, για να μη χρειάζεται δύο taps. */
+  table.t.cards tr:not(.open) td:not(.primary):not(.act){display:none}
+  table.t.cards td.act{margin-top:6px}
+  table.t.cards td.num{text-align:left}
+  table.t.cards td[data-l]:before{content:attr(data-l) ": ";color:var(--ink-3);font-size:12px}
+  .exp-toggle{display:inline;float:right;color:var(--ink-3)}
+  .modal-bg{align-items:flex-end;padding:0}
+  .modal{max-width:none;border-radius:var(--radius) var(--radius) 0 0}
+}
+
+@media print{
+  header.app nav, nav.tabs, #banners, .no-print{display:none !important}
+  body{background:#fff}
+  .card{box-shadow:none}
+}
+</style>
+</head>
+<body>
+
+<div id="banners"></div>
+<div id="toasts"></div>
+
+<!-- ======================= LOGIN ======================= -->
+<section id="login" class="hidden">
+  <div class="box">
+    <img class="logo" src="data:image/png;base64,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" alt="ARCHES">
+    <div class="roles">
+      <button type="button" data-role="employee"><span class="t">Υπάλληλος</span><span class="s">Πωλήσεις βάρδιας</span></button>
+      <button type="button" data-role="owner"><span class="t">Ιδιοκτήτης</span><span class="s">Απόθεμα & αναφορές</span></button>
+    </div>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" maxlength="8">
+    <div class="login-err" id="loginErr"></div>
+    <button class="btn primary" id="loginBtn" style="width:100%">Είσοδος</button>
+  </div>
+</section>
+
+<!-- ======================= APP ======================= -->
+<section id="app" class="hidden">
+  <header class="app">
+    <img class="logo" src="data:image/png;base64,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" alt="ARCHES">
+    <div class="who">
+      <span class="pill" id="roleLabel"></span>
+      <button class="btn small" id="logoutBtn">Αλλαγή χρήστη</button>
+    </div>
+  </header>
+  <nav class="tabs" id="tabs"></nav>
+  <main id="view"></main>
+</section>
+
+<div id="modalRoot"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ==========================================================================
+   1. ΡΥΘΜΙΣΕΙΣ
+   ========================================================================== */
+
+/* Firebase config του ΔΙΚΟΥ ΜΑΣ, νέου project (console.firebase.google.com
+   → Project settings → Your apps → Web app). ΔΕΝ μπαίνουν κλειδιά άλλης
+   εφαρμογής. Όσο το projectId είναι κενό, η εφαρμογή τρέχει σε offline
+   mode (local-only, χάνονται με refresh) με ορατό banner. */
+var FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDewbbV_1ctu20_-nYMfymy-BpltzVi83E",
+  authDomain: "arches-36375.firebaseapp.com",
+  projectId: "arches-36375",
+  storageBucket: "arches-36375.firebasestorage.app",
+  messagingSenderId: "736733226584",
+  appId: "1:736733226584:web:528afe77fe388ac3870c2d"
+};
+
+/* ΠΡΟΣΟΧΗ: το PIN ΔΕΝ είναι πραγματικό security boundary.
+   Είναι γραμμένο μέσα στον κώδικα της σελίδας και τα Firestore rules είναι
+   ανοιχτά, άρα όποιος έχει το projectId μπορεί να διαβάσει/γράψει τη βάση
+   απευθείας. Το PIN υπάρχει μόνο για να μην μπει κατά λάθος ο υπάλληλος
+   στην οθόνη ιδιοκτήτη. Αλλάξτε το πριν το deploy. */
+var ADMIN_PIN = "9276";
+
+/* Default PIN υπαλλήλου μέχρι ο ιδιοκτήτης να ορίσει δικό του από τις
+   Ρυθμίσεις (αποθηκεύεται στο Firestore doc settings/app). */
+var DEFAULT_EMPLOYEE_PIN = "10007";
+
+/* Κάτω από αυτή την ποσότητα ένα μέγεθος εμφανίζεται ως "χαμηλό". */
+var LOW_STOCK = 2;
+
+var LS_ROLE = "arches.role"; /* localStorage key: κάθε συσκευή θυμάται τον ρόλο της */
+
+
+/* ==========================================================================
+   2. STATE (in-memory)
+   Τα arrays γεμίζουν ΜΟΝΟ από τους onSnapshot listeners. Δεν υπάρχει
+   χειροκίνητο "save": κάθε write πάει στο Firestore και ο listener φέρνει
+   πίσω την αλλαγή σε ΟΛΕΣ τις συσκευές, που κάνουν renderAll().
+   ========================================================================== */
+var db = null;            /* null => offline mode */
+var offline = false;
+
+var products = [];        /* {id,name,code,category,sizes:[{s,q}],ts} */
+var todaySales = [];      /* πωλήσεις της σημερινής βάρδιας */
+var reportSales = [];     /* πωλήσεις της ημέρας που βλέπει ο ιδιοκτήτης στην Αναφορά */
+var settings = { employeePin: DEFAULT_EMPLOYEE_PIN };
+
+var role = null;          /* "owner" | "employee" */
+var tab = null;
+var currentDay = dayKey(new Date());
+var reportDay = currentDay;
+var search = "";
+var openRows = {};        /* ποιες compact κάρτες είναι ανοιχτές σε mobile */
+
+var unsubToday = null;
+var unsubReport = null;
+
+
+/* ==========================================================================
+   3. HELPERS
+   ========================================================================== */
+function $(id){ return document.getElementById(id); }
+
+function esc(s){
+  return String(s == null ? "" : s)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+
+function pad2(n){ return (n < 10 ? "0" : "") + n; }
+
+/* Η "βάρδια" = ημερολογιακή μέρα της ΣΥΣΚΕΥΗΣ (τοπική ώρα, όχι UTC).
+   Αν χρησιμοποιούσαμε toISOString() θα παίρναμε UTC, και μια πώληση στις
+   01:30 ώρα Ελλάδας θα πήγαινε στη χθεσινή βάρδια. */
+function dayKey(d){
+  return d.getFullYear() + "-" + pad2(d.getMonth()+1) + "-" + pad2(d.getDate());
+}
+function dayLabel(k){
+  var p = k.split("-");
+  var d = new Date(+p[0], +p[1]-1, +p[2]);
+  var days = ["Κυριακή","Δευτέρα","Τρίτη","Τετάρτη","Πέμπτη","Παρασκευή","Σάββατο"];
+  return days[d.getDay()] + " " + p[2] + "/" + p[1] + "/" + p[0];
+}
+function shiftDay(k, delta){
+  var p = k.split("-");
+  var d = new Date(+p[0], +p[1]-1, +p[2] + delta);
+  return dayKey(d);
+}
+function timeLabel(ts){
+  if (!ts) return "";
+  var d = new Date(ts);
+  return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+}
+function newId(){
+  /* Για offline mode μόνο· online τα ids τα δίνει το Firestore. */
+  return "local_" + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+}
+function findProduct(id){
+  for (var i = 0; i < products.length; i++) if (products[i].id === id) return products[i];
+  return null;
+}
+function sizeQty(p, s){
+  for (var i = 0; i < (p.sizes || []).length; i++) if (p.sizes[i].s === s) return p.sizes[i].q;
+  return 0;
+}
+function totalStock(p){
+  var t = 0;
+  for (var i = 0; i < (p.sizes || []).length; i++) t += p.sizes[i].q;
+  return t;
+}
+/* Αντίγραφο του sizes array: δεν πειράζουμε ποτέ in-place αντικείμενα που
+   ήρθαν από snapshot, γιατί ο επόμενος listener θα τα αντικαταστήσει. */
+function cloneSizes(sizes){
+  var out = [];
+  for (var i = 0; i < (sizes || []).length; i++) out.push({ s: sizes[i].s, q: sizes[i].q });
+  return out;
+}
+
+
+/* ==========================================================================
+   4. BANNERS
+   Κάθε αποτυχία (listener ή write) εμφανίζεται με το ΠΡΑΓΜΑΤΙΚΟ μήνυμα
+   του Firestore, π.χ. "Missing or insufficient permissions" όταν λείπει
+   security rule. Ποτέ σιωπηλή αποτυχία.
+   ========================================================================== */
+var bannerSeq = 0;
+function showBanner(kind, html, sticky){
+  var id = "b" + (++bannerSeq);
+  var el = document.createElement("div");
+  el.className = "banner " + kind;
+  el.id = id;
+  el.innerHTML = "<div>" + html + "</div>" + (sticky ? "" : '<button class="x" aria-label="Κλείσιμο">×</button>');
+  if (!sticky) el.querySelector(".x").onclick = function(){ el.parentNode && el.parentNode.removeChild(el); };
+  (kind === "ok" ? $("toasts") : $("banners")).appendChild(el);
+  if (kind === "ok") setTimeout(function(){ el.parentNode && el.parentNode.removeChild(el); }, 2500);
+  return id;
+}
+function showError(context, err){
+  var msg = (err && (err.message || err.code)) ? (err.message || err.code) : String(err);
+  if (window.console) console.error(context, err);
+  showBanner("error", "<b>" + esc(context) + ":</b> " + esc(msg));
+}
+function showOk(msg){ showBanner("ok", esc(msg)); }
+
+
+/* ==========================================================================
+   5. FIREBASE / COLLECTIONS
+   ========================================================================== */
+function initFirebase(){
+  /* Δύο λόγοι για offline mode: (α) δεν φόρτωσε το SDK από το CDN,
+     (β) δεν έχει μπει ακόμα projectId. Και στις δύο περιπτώσεις η εφαρμογή
+     ανοίγει κανονικά με ορατό banner αντί να σπάσει σιωπηλά. */
+  if (typeof firebase === "undefined" || !firebase.firestore) {
+    goOffline("Το Firebase SDK δεν φόρτωσε (πρόβλημα δικτύου/CDN).");
+    return;
+  }
+  if (!FIREBASE_CONFIG.projectId) {
+    goOffline("Δεν έχει οριστεί projectId στο FIREBASE_CONFIG.");
+    return;
+  }
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+  } catch (e) {
+    goOffline("Αποτυχία αρχικοποίησης Firebase: " + (e.message || e));
+  }
+}
+function goOffline(reason){
+  offline = true;
+  db = null;
+  showBanner("offline", "<b>Offline mode</b> — " + esc(reason) +
+    " Οι αλλαγές κρατιούνται μόνο σε αυτή τη σελίδα και χάνονται με ανανέωση.", true);
+}
+
+/* Ένα top-level collection ανά οντότητα. */
+function productsCol(){ return db.collection("products"); }
+function salesCol(){ return db.collection("sales"); }
+function settingsDoc(){ return db.collection("settings").doc("app"); }
+
+function snapToArray(snap){
+  var arr = [];
+  snap.forEach(function(doc){
+    var d = doc.data();
+    d.id = doc.id;
+    arr.push(d);
+  });
+  return arr;
+}
+
+function startListeners(){
+  if (!db) { renderAll(); return; }
+
+  /* PRODUCTS: ΧΩΡΙΣ .limit(). Είναι μακρόβιες εγγραφές που πρέπει να
+     φαίνονται ΟΛΕΣ επ' αόριστον. Ένα limit εδώ θα έκανε τα παλιά ρούχα να
+     "εξαφανίζονται" αθόρυβα όταν προστεθούν καινούρια (γνωστό bug της άλλης
+     εφαρμογής). Ο όγκος ενός καταστήματος (εκατοντάδες είδη) είναι ασήμαντος. */
+  productsCol().onSnapshot(function(snap){
+    products = snapToArray(snap);
+    products.sort(function(a,b){ return (a.name || "").localeCompare(b.name || "", "el"); });
+    renderAll();
+  }, function(err){ showError("Φόρτωση προϊόντων", err); });
+
+  settingsDoc().onSnapshot(function(doc){
+    var d = doc.exists ? doc.data() : {};
+    settings.employeePin = d.employeePin || DEFAULT_EMPLOYEE_PIN;
+    renderAll();
+  }, function(err){ showError("Φόρτωση ρυθμίσεων", err); });
+
+  subscribeToday();
+  subscribeReport();
+
+  /* Η βάρδια αλλάζει αυτόματα στα μεσάνυχτα. Αν η σελίδα μείνει ανοιχτή
+     όλη νύχτα, πρέπει να ξαναστήσουμε τον listener στη νέα μέρα — αλλιώς
+     ο υπάλληλος θα έγραφε στη σωστή μέρα αλλά θα έβλεπε τη χθεσινή λίστα. */
+  setInterval(function(){
+    var k = dayKey(new Date());
+    if (k !== currentDay) {
+      var wasToday = (reportDay === currentDay);
+      currentDay = k;
+      if (wasToday) reportDay = k;
+      subscribeToday();
+      subscribeReport();
+      renderAll();
+    }
+  }, 30000);
+}
+
+/* SALES της σημερινής βάρδιας.
+   Οι πωλήσεις είναι το collection υψηλού όγκου, αλλά ΔΕΝ το κόβουμε με
+   .limit(N): το φιλτράρουμε με where('day','==',σήμερα). Έτσι το μέγεθος
+   είναι φυσικά φραγμένο (μία μέρα) ΚΑΙ η αναφορά είναι πάντα πλήρης —
+   ένα limit θα έκοβε αθόρυβα πωλήσεις από τη μέτρηση της βάρδιας.
+   Ταξινόμηση client-side: ένα .orderBy('ts') μαζί με where σε άλλο πεδίο
+   θα χρειαζόταν composite index στο console. */
+function subscribeToday(){
+  if (!db) return;
+  if (unsubToday) unsubToday();
+  unsubToday = salesCol().where("day", "==", currentDay).onSnapshot(function(snap){
+    todaySales = snapToArray(snap);
+    todaySales.sort(function(a,b){ return b.ts - a.ts; });
+    if (reportDay === currentDay) reportSales = todaySales;
+    renderAll();
+  }, function(err){ showError("Φόρτωση πωλήσεων βάρδιας", err); });
+}
+
+/* SALES για την ημέρα που επιλέγει ο ιδιοκτήτης στην Αναφορά.
+   Αν είναι η σημερινή, ξαναχρησιμοποιούμε τον listener της βάρδιας
+   (όχι δεύτερο ίδιο query). */
+function subscribeReport(){
+  if (unsubReport) { unsubReport(); unsubReport = null; }
+  if (reportDay === currentDay) { reportSales = todaySales; renderAll(); return; }
+  if (!db) { reportSales = offlineSalesFor(reportDay); renderAll(); return; }
+  reportSales = [];
+  renderAll();
+  unsubReport = salesCol().where("day", "==", reportDay).onSnapshot(function(snap){
+    reportSales = snapToArray(snap);
+    reportSales.sort(function(a,b){ return b.ts - a.ts; });
+    renderAll();
+  }, function(err){ showError("Φόρτωση αναφοράς", err); });
+}
+
+/* Offline mode: όλες οι πωλήσεις σε ένα local array. */
+var offlineAllSales = [];
+function offlineSalesFor(day){
+  var out = [];
+  for (var i = 0; i < offlineAllSales.length; i++) if (offlineAllSales[i].day === day) out.push(offlineAllSales[i]);
+  out.sort(function(a,b){ return b.ts - a.ts; });
+  return out;
+}
+function offlineRefresh(){
+  todaySales = offlineSalesFor(currentDay);
+  reportSales = offlineSalesFor(reportDay);
+  renderAll();
+}
+
+
+/* ==========================================================================
+   6. WRITES
+   Όλα τα writes πάνε απευθείας στο Firestore doc. Όπου αλλάζει απόθεμα
+   χρησιμοποιούμε TRANSACTION, γιατί δύο συσκευές (υπάλληλος + ιδιοκτήτης)
+   μπορεί να γράφουν ταυτόχρονα στο ίδιο προϊόν.
+   ========================================================================== */
+
+/* ΠΩΛΗΣΗ: αφαιρεί qty από ένα μέγεθος και γράφει εγγραφή στο sales.
+   Transaction: διαβάζει το ΤΡΕΧΟΝ απόθεμα από τον server, ώστε αν το
+   τελευταίο τεμάχιο πουλήθηκε μόλις από άλλη συσκευή, να αποτύχει
+   καθαρά αντί να πάει το απόθεμα αρνητικό. */
+function recordSale(productId, size, qty){
+  var p = findProduct(productId);
+  var sale = {
+    productId: productId,
+    productName: p ? p.name : "",   /* snapshot του ονόματος: η αναφορά μένει σωστή κι αν σβηστεί/μετονομαστεί το προϊόν */
+    productCode: p ? (p.code || "") : "",
+    size: size,
+    qty: qty,
+    day: currentDay,
+    ts: Date.now(),
+    by: role,
+    undone: false
+  };
+
+  if (!db) {
+    if (!p || sizeQty(p, size) < qty) return Promise.reject(new Error("Δεν υπάρχει αρκετό απόθεμα."));
+    var sz = cloneSizes(p.sizes);
+    for (var i = 0; i < sz.length; i++) if (sz[i].s === size) sz[i].q -= qty;
+    p.sizes = sz;
+    sale.id = newId();
+    offlineAllSales.push(sale);
+    offlineRefresh();
+    return Promise.resolve();
+  }
+
+  var pRef = productsCol().doc(productId);
+  var sRef = salesCol().doc();
+  return db.runTransaction(function(t){
+    return t.get(pRef).then(function(doc){
+      if (!doc.exists) throw new Error("Το προϊόν δεν υπάρχει πια.");
+      var sz = cloneSizes(doc.data().sizes);
+      var found = false;
+      for (var i = 0; i < sz.length; i++) {
+        if (sz[i].s === size) {
+          found = true;
+          if (sz[i].q < qty) throw new Error("Δεν υπάρχει αρκετό απόθεμα (διαθέσιμα: " + sz[i].q + ").");
+          sz[i].q -= qty;
+        }
+      }
+      if (!found) throw new Error("Το μέγεθος " + size + " δεν υπάρχει πια.");
+      t.update(pRef, { sizes: sz, ts: Date.now() });
+      t.set(sRef, sale);
+    });
+  });
+}
+
+/* ΑΝΑΙΡΕΣΗ: ΔΕΝ σβήνουμε την πώληση. Τη σημαδεύουμε undone:true και
+   επιστρέφουμε το τεμάχιο στο απόθεμα. Έτσι ο ιδιοκτήτης τη βλέπει στην
+   αναφορά με αστερίσκο (ζητούμενο), και δεν μπορεί να "χαθεί" μια
+   πώληση χωρίς ίχνος. */
+function undoSale(saleId){
+  if (!db) {
+    for (var i = 0; i < offlineAllSales.length; i++) {
+      var s = offlineAllSales[i];
+      if (s.id === saleId && !s.undone) {
+        s.undone = true; s.undoneTs = Date.now(); s.undoneBy = role;
+        var p = findProduct(s.productId);
+        if (p) {
+          var sz = cloneSizes(p.sizes);
+          for (var j = 0; j < sz.length; j++) if (sz[j].s === s.size) sz[j].q += s.qty;
+          p.sizes = sz;
+        }
+      }
+    }
+    offlineRefresh();
+    return Promise.resolve();
+  }
+
+  var sRef = salesCol().doc(saleId);
+  return db.runTransaction(function(t){
+    return t.get(sRef).then(function(sDoc){
+      if (!sDoc.exists) throw new Error("Η πώληση δεν βρέθηκε.");
+      var s = sDoc.data();
+      if (s.undone) return; /* ήδη αναιρεμένη από άλλη συσκευή: τίποτα να κάνουμε */
+      var pRef = productsCol().doc(s.productId);
+      /* Στα transactions όλα τα reads πρέπει να γίνουν πριν τα writes. */
+      return t.get(pRef).then(function(pDoc){
+        if (pDoc.exists) {
+          var sz = cloneSizes(pDoc.data().sizes);
+          var found = false;
+          for (var i = 0; i < sz.length; i++) if (sz[i].s === s.size) { sz[i].q += s.qty; found = true; }
+          /* Αν το μέγεθος σβήστηκε στο μεταξύ, το ξαναδημιουργούμε για να μη χαθεί το τεμάχιο. */
+          if (!found) sz.push({ s: s.size, q: s.qty });
+          t.update(pRef, { sizes: sz, ts: Date.now() });
+        }
+        t.update(sRef, { undone: true, undoneTs: Date.now(), undoneBy: role });
+      });
+    });
+  });
+}
+
+/* ΑΠΟΘΗΚΕΥΣΗ ΠΡΟΪΟΝΤΟΣ (ιδιοκτήτης).
+   Πρόβλημα: ο ιδιοκτήτης ανοίγει τη φόρμα με απόθεμα M=5, στο μεταξύ ο
+   υπάλληλος πουλάει 1 (M=4), ο ιδιοκτήτης πατάει Αποθήκευση με M=5 →
+   η πώληση θα "ακυρωνόταν" σιωπηλά. Λύση: θυμόμαστε τις ποσότητες που
+   είχε η φόρμα όταν άνοιξε (baseSizes) και γράφουμε μόνο τη ΔΙΑΦΟΡΑ που
+   έκανε ο ιδιοκτήτης, πάνω στο τρέχον απόθεμα του server. */
+function saveProduct(id, data, baseSizes){
+  function merge(currentSizes){
+    var out = [];
+    for (var i = 0; i < data.sizes.length; i++) {
+      var s = data.sizes[i].s;
+      var formQ = data.sizes[i].q;
+      var baseQ = baseSizes.hasOwnProperty(s) ? baseSizes[s] : null;
+      var curQ = null;
+      for (var j = 0; j < currentSizes.length; j++) if (currentSizes[j].s === s) curQ = currentSizes[j].q;
+      var q;
+      if (baseQ === null || curQ === null) q = formQ;      /* νέο μέγεθος */
+      else q = curQ + (formQ - baseQ);                      /* εφαρμογή μόνο της διαφοράς */
+      out.push({ s: s, q: Math.max(0, q) });
+    }
+    return out;
+  }
+
+  if (!db) {
+    if (id) {
+      var p = findProduct(id);
+      p.name = data.name; p.code = data.code; p.category = data.category;
+      p.sizes = merge(p.sizes || []); p.ts = Date.now();
+    } else {
+      products.push({ id: newId(), name: data.name, code: data.code, category: data.category, sizes: merge([]), ts: Date.now() });
+      products.sort(function(a,b){ return a.name.localeCompare(b.name, "el"); });
+    }
+    renderAll();
+    return Promise.resolve();
+  }
+
+  if (!id) {
+    return productsCol().doc().set({
+      name: data.name, code: data.code, category: data.category,
+      sizes: merge([]), ts: Date.now(), createdTs: Date.now()
+    });
+  }
+  var ref = productsCol().doc(id);
+  return db.runTransaction(function(t){
+    return t.get(ref).then(function(doc){
+      var cur = doc.exists ? (doc.data().sizes || []) : [];
+      t.set(ref, {
+        name: data.name, code: data.code, category: data.category,
+        sizes: merge(cur), ts: Date.now()
+      }, { merge: true });
+    });
+  });
+}
+
+function deleteProduct(id){
+  if (!db) {
+    products = products.filter(function(p){ return p.id !== id; });
+    renderAll();
+    return Promise.resolve();
+  }
+  /* Οι παλιές πωλήσεις ΔΕΝ σβήνονται: κρατάνε productName ως snapshot,
+     άρα οι αναφορές παλιών βαρδιών μένουν πλήρεις. */
+  return productsCol().doc(id).delete();
+}
+
+function saveEmployeePin(pin){
+  if (!db) { settings.employeePin = pin; renderAll(); return Promise.resolve(); }
+  return settingsDoc().set({ employeePin: pin }, { merge: true });
+}
+
+
+/* ==========================================================================
+   7. LOGIN / ΡΟΛΟΙ
+   ========================================================================== */
+var loginRole = "employee";
+
+function showLogin(){
+  $("app").classList.add("hidden");
+  $("login").classList.remove("hidden");
+  selectLoginRole(loginRole);
+  $("pin").value = "";
+  $("loginErr").textContent = "";
+  setTimeout(function(){ $("pin").focus(); }, 50);
+}
+function selectLoginRole(r){
+  loginRole = r;
+  var btns = document.querySelectorAll(".roles button");
+  for (var i = 0; i < btns.length; i++) btns[i].classList.toggle("sel", btns[i].getAttribute("data-role") === r);
+}
+function tryLogin(){
+  var pin = $("pin").value;
+  var ok = loginRole === "owner" ? (pin === ADMIN_PIN) : (pin === settings.employeePin);
+  if (!ok) { $("loginErr").textContent = "Λάθος PIN."; $("pin").value = ""; return; }
+  setRole(loginRole);
+}
+function setRole(r){
+  role = r;
+  /* localStorage μπορεί να πετάξει (private mode σε παλιό Safari). Ο ρόλος
+     είναι ευκολία, όχι κρίσιμο δεδομένο: αν αποτύχει, απλώς θα ζητηθεί
+     ξανά PIN στο επόμενο άνοιγμα. */
+  try { if (r) localStorage.setItem(LS_ROLE, r); else localStorage.removeItem(LS_ROLE); } catch (e) {}
+  if (!r) { showLogin(); return; }
+  tab = (r === "owner") ? "report" : "sell";
+  $("login").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  renderAll();
+}
+function savedRole(){
+  try { var r = localStorage.getItem(LS_ROLE); return (r === "owner" || r === "employee") ? r : null; }
+  catch (e) { return null; }
+}
+
+
+/* ==========================================================================
+   8. RENDER
+   Μία renderAll() που ξαναζωγραφίζει την τρέχουσα οθόνη από τα arrays.
+   Καλείται από κάθε listener· έτσι όλες οι συσκευές μένουν συγχρονισμένες.
+   ========================================================================== */
+var TABS = {
+  employee: [["sell","Πώληση"],["shift","Η βάρδια μου"]],
+  owner:    [["report","Αναφορά βάρδιας"],["stock","Απόθεμα"],["sell","Πώληση"],["settings","Ρυθμίσεις"]]
+};
+
+function renderAll(){
+  if (!role || $("app").classList.contains("hidden")) return;
+  $("roleLabel").textContent = role === "owner" ? "Ιδιοκτήτης" : "Υπάλληλος";
+
+  var tabs = TABS[role], h = "";
+  for (var i = 0; i < tabs.length; i++) {
+    h += '<button data-tab="' + tabs[i][0] + '"' + (tabs[i][0] === tab ? ' class="active"' : '') + '>' + tabs[i][1] + '</button>';
+  }
+  $("tabs").innerHTML = h;
+
+  /* Κρατάμε focus/θέση cursor στο πεδίο αναζήτησης: αλλιώς κάθε snapshot
+     (π.χ. πώληση από άλλη συσκευή) θα έκλεινε το πληκτρολόγιο στο κινητό. */
+  var active = document.activeElement;
+  var keepSearch = active && active.id === "search";
+  var caret = keepSearch ? active.selectionStart : 0;
+
+  var v = $("view");
+  if (tab === "sell") v.innerHTML = renderSell();
+  else if (tab === "shift") v.innerHTML = renderShift();
+  else if (tab === "report") v.innerHTML = renderReport();
+  else if (tab === "stock") v.innerHTML = renderStock();
+  else if (tab === "settings") v.innerHTML = renderSettings();
+
+  if (keepSearch && $("search")) { $("search").focus(); try { $("search").setSelectionRange(caret, caret); } catch (e) {} }
+}
+
+function matchesSearch(p){
+  if (!search) return true;
+  var q = search.toLowerCase();
+  return (p.name || "").toLowerCase().indexOf(q) >= 0 ||
+         (p.code || "").toLowerCase().indexOf(q) >= 0 ||
+         (p.category || "").toLowerCase().indexOf(q) >= 0;
+}
+
+function searchBox(placeholder){
+  return '<input type="search" id="search" placeholder="' + esc(placeholder) + '" value="' + esc(search) + '" autocomplete="off">';
+}
+
+/* ---------- Πώληση ---------- */
+function renderSell(){
+  var h = '<div class="row"><h2>Πώληση</h2><span class="spacer"></span><span class="muted">Βάρδια: ' + esc(dayLabel(currentDay)) + '</span></div>';
+  h += searchBox("Αναζήτηση ρούχου, κωδικού ή κατηγορίας…");
+  var list = products.filter(matchesSearch);
+  if (!products.length) return h + '<div class="card empty" style="margin-top:16px">Δεν υπάρχουν ακόμα ρούχα. ' + (role === "owner" ? 'Προσθέστε από την καρτέλα «Απόθεμα».' : 'Ο ιδιοκτήτης πρέπει να τα προσθέσει.') + '</div>';
+  if (!list.length) return h + '<div class="empty">Κανένα αποτέλεσμα.</div>';
+  h += '<div class="prod-grid">';
+  for (var i = 0; i < list.length; i++) {
+    var p = list[i];
+    h += '<div class="card prod"><div class="name">' + esc(p.name) + '</div>';
+    h += '<div class="meta">' + esc([p.code, p.category].filter(Boolean).join(" · ") || " ") + '</div><div class="sizes">';
+    var sz = p.sizes || [];
+    if (!sz.length) h += '<span class="muted">Χωρίς μεγέθη</span>';
+    for (var j = 0; j < sz.length; j++) {
+      var q = sz[j].q, cls = "size" + (q <= 0 ? " zero" : (q <= LOW_STOCK ? " low" : ""));
+      h += '<button class="' + cls + '" data-sell="' + esc(p.id) + '" data-size="' + esc(sz[j].s) + '"' + (q <= 0 ? ' disabled' : '') + '>' +
+           '<span class="l">' + esc(sz[j].s) + '</span><span class="q">' + q + ' τμχ</span></button>';
+    }
+    h += '</div></div>';
+  }
+  return h + '</div>';
+}
+
+function openSellModal(pid, size){
+  var p = findProduct(pid);
+  if (!p) return;
+  var max = sizeQty(p, size), qty = 1;
+  function body(){
+    return '<div class="card pad modal">' +
+      '<h3>' + esc(p.name) + '</h3><div class="muted">Μέγεθος <b>' + esc(size) + '</b> · διαθέσιμα ' + max + '</div>' +
+      '<div class="qty"><button class="btn" data-q="-1">−</button><span class="v">' + qty + '</span><button class="btn" data-q="1">+</button></div>' +
+      '<div class="row"><button class="btn" data-close>Ακύρωση</button><span class="spacer"></span>' +
+      '<button class="btn primary" data-confirm>Καταχώριση πώλησης</button></div></div>';
+  }
+  var m = openModal(body());
+  m.onclick = function(e){
+    var t = e.target.closest ? e.target.closest("button") : null;
+    if (e.target === m || (t && t.hasAttribute("data-close"))) { closeModal(); return; }
+    if (!t) return;
+    if (t.hasAttribute("data-q")) {
+      qty = Math.min(max, Math.max(1, qty + (+t.getAttribute("data-q"))));
+      m.innerHTML = body();
+    } else if (t.hasAttribute("data-confirm")) {
+      t.disabled = true; /* αποτροπή διπλής καταχώρισης με διπλό tap */
+      recordSale(pid, size, qty).then(function(){
+        closeModal();
+        showOk("Καταχωρίστηκε: " + p.name + " · " + size + " × " + qty);
+      }, function(err){ t.disabled = false; showError("Πώληση", err); });
+    }
+  };
+}
+
+/* ---------- Η βάρδια μου (υπάλληλος) ---------- */
+function renderShift(){
+  var h = '<h2>Η βάρδια μου</h2><div class="muted" style="margin-bottom:12px">' + esc(dayLabel(currentDay)) +
+          ' — η βάρδια κλείνει αυτόματα στα μεσάνυχτα.</div>';
+  h += statsBlock(todaySales);
+  if (!todaySales.length) return h + '<div class="card empty">Καμία πώληση ακόμα σήμερα.</div>';
+  h += '<div class="card"><table class="t cards"><thead><tr><th>Ώρα</th><th>Ρούχο</th><th>Μέγεθος</th><th class="num">Τμχ</th><th></th></tr></thead><tbody>';
+  for (var i = 0; i < todaySales.length; i++) {
+    var s = todaySales[i], key = "sh" + s.id, open = openRows[key];
+    h += '<tr data-row="' + key + '" class="' + (s.undone ? 'undone ' : '') + (open ? 'open' : '') + '">' +
+      '<td class="primary"><span class="exp-toggle">' + (open ? '▴' : '▾') + '</span>' + timeLabel(s.ts) +
+      '<span class="m-only"> · <span class="strike">' + esc(s.productName) + ' — ' + esc(s.size) + ' × ' + s.qty + '</span></span>' +
+      (s.undone ? ' <span class="star">*</span>' : '') + '</td>' +
+      '<td class="d-only strike">' + esc(s.productName) + '</td>' +
+      '<td class="d-only strike">' + esc(s.size) + '</td><td class="num d-only strike">' + s.qty + '</td>' +
+      '<td class="num act">' + (s.undone
+        ? '<span class="muted">Αναιρέθηκε ' + timeLabel(s.undoneTs) + '</span>'
+        : '<button class="btn small danger" data-undo="' + esc(s.id) + '">Αναίρεση</button>') + '</td></tr>';
+  }
+  h += '</tbody></table></div>';
+  h += '<p class="muted" style="font-size:13px"><span class="star">*</span> Οι αναιρέσεις επιστρέφουν το τεμάχιο στο απόθεμα και εμφανίζονται στον ιδιοκτήτη.</p>';
+  return h;
+}
+
+function statsBlock(sales){
+  var items = 0, lines = 0, undos = 0;
+  for (var i = 0; i < sales.length; i++) {
+    if (sales[i].undone) undos++;
+    else { items += sales[i].qty; lines++; }
+  }
+  return '<div class="stats">' +
+    '<div class="card stat"><div class="v">' + items + '</div><div class="k">Τεμάχια</div></div>' +
+    '<div class="card stat"><div class="v">' + lines + '</div><div class="k">Πωλήσεις</div></div>' +
+    '<div class="card stat"><div class="v">' + undos + (undos ? '<span class="star">*</span>' : '') + '</div><div class="k">Αναιρέσεις</div></div></div>';
+}
+
+/* ---------- Αναφορά βάρδιας (ιδιοκτήτης) ---------- */
+function renderReport(){
+  var h = '<div class="row"><h2>Αναφορά βάρδιας</h2><span class="spacer"></span>' +
+    '<div class="row no-print"><button class="btn small" data-day="-1">‹</button>' +
+    '<input type="date" id="reportDate" value="' + reportDay + '" max="' + currentDay + '" style="width:auto">' +
+    '<button class="btn small" data-day="1"' + (reportDay >= currentDay ? ' disabled' : '') + '>›</button>' +
+    '<button class="btn small" data-print>Εκτύπωση</button></div></div>';
+  h += '<div class="muted">' + esc(dayLabel(reportDay)) + (reportDay === currentDay ? ' — σε εξέλιξη (ενημερώνεται ζωντανά)' : ' — κλειστή') + '</div>';
+  h += statsBlock(reportSales);
+  if (!reportSales.length) return h + '<div class="card empty">Καμία πώληση αυτή τη μέρα.</div>';
+
+  /* Σύνοψη ανά ρούχο+μέγεθος: ΜΟΝΟ οι ενεργές πωλήσεις μετράνε. */
+  var groups = {}, order = [];
+  for (var i = 0; i < reportSales.length; i++) {
+    var s = reportSales[i];
+    if (s.undone) continue;
+    var k = s.productId + "|" + s.size;
+    if (!groups[k]) { groups[k] = { name: s.productName, code: s.productCode, size: s.size, qty: 0 }; order.push(k); }
+    groups[k].qty += s.qty;
+  }
+  order.sort(function(a,b){ return groups[a].name.localeCompare(groups[b].name, "el") || String(groups[a].size).localeCompare(String(groups[b].size)); });
+
+  h += '<h3 style="margin-top:8px">Τι πουλήθηκε</h3><div class="card" style="margin-bottom:20px"><table class="t"><thead><tr><th>Ρούχο</th><th>Μέγεθος</th><th class="num">Τεμάχια</th></tr></thead><tbody>';
+  if (!order.length) h += '<tr><td colspan="3" class="muted">Όλες οι πωλήσεις αναιρέθηκαν.</td></tr>';
+  for (var g = 0; g < order.length; g++) {
+    var r = groups[order[g]];
+    h += '<tr><td>' + esc(r.name) + (r.code ? ' <span class="muted">' + esc(r.code) + '</span>' : '') + '</td><td>' + esc(r.size) + '</td><td class="num"><b>' + r.qty + '</b></td></tr>';
+  }
+  h += '</tbody></table></div>';
+
+  /* Αναλυτικές κινήσεις: εδώ φαίνονται ΚΑΙ οι αναιρέσεις με αστερίσκο. */
+  h += '<h3>Αναλυτικά <span class="muted" style="font-size:14px">(<span class="star">*</span> = αναιρέθηκε)</span></h3>';
+  h += '<div class="card"><table class="t cards"><thead><tr><th>Ώρα</th><th>Ρούχο</th><th>Μέγεθος</th><th class="num">Τμχ</th><th>Από</th><th>Σημείωση</th></tr></thead><tbody>';
+  for (var j = 0; j < reportSales.length; j++) {
+    var x = reportSales[j], key = "rp" + x.id, open = openRows[key];
+    h += '<tr data-row="' + key + '" class="' + (x.undone ? 'undone ' : '') + (open ? 'open' : '') + '">' +
+      '<td class="primary"><span class="exp-toggle">' + (open ? '▴' : '▾') + '</span>' + timeLabel(x.ts) +
+      '<span class="m-only"> · <span class="strike">' + esc(x.productName) + ' — ' + esc(x.size) + ' × ' + x.qty + '</span></span>' +
+      (x.undone ? ' <span class="star">*</span>' : '') + '</td>' +
+      '<td data-l="Ρούχο" class="d-only strike">' + esc(x.productName) + '</td>' +
+      '<td data-l="Μέγεθος" class="d-only strike">' + esc(x.size) + '</td>' +
+      '<td data-l="Τμχ" class="num d-only strike">' + x.qty + '</td>' +
+      '<td data-l="Από">' + (x.by === "owner" ? "Ιδιοκτήτης" : "Υπάλληλος") + '</td>' +
+      '<td data-l="Σημείωση">' + (x.undone ? '<span class="star">*</span> Αναιρέθηκε ' + timeLabel(x.undoneTs) + (x.undoneBy ? ' από ' + (x.undoneBy === "owner" ? "ιδιοκτήτη" : "υπάλληλο") : '') : '') + '</td></tr>';
+  }
+  return h + '</tbody></table></div>';
+}
+
+/* ---------- Απόθεμα (ιδιοκτήτης) ---------- */
+function renderStock(){
+  var total = 0;
+  for (var i = 0; i < products.length; i++) total += totalStock(products[i]);
+  var h = '<div class="row"><h2>Απόθεμα</h2><span class="spacer"></span><span class="muted">' + products.length + ' είδη · ' + total + ' τεμάχια</span>' +
+          '<button class="btn primary" data-new>+ Νέο ρούχο</button></div>';
+  h += searchBox("Αναζήτηση…");
+  var list = products.filter(matchesSearch);
+  if (!list.length) return h + '<div class="card empty" style="margin-top:16px">' + (products.length ? 'Κανένα αποτέλεσμα.' : 'Δεν υπάρχουν ακόμα ρούχα. Πατήστε «Νέο ρούχο».') + '</div>';
+  h += '<div class="card" style="margin-top:16px"><table class="t cards"><thead><tr><th>Ρούχο</th><th>Κωδικός</th><th>Κατηγορία</th><th>Μεγέθη (απόθεμα)</th><th class="num">Σύνολο</th><th></th></tr></thead><tbody>';
+  for (var j = 0; j < list.length; j++) {
+    var p = list[j], key = "st" + p.id, open = openRows[key], sz = p.sizes || [], chips = "";
+    for (var k = 0; k < sz.length; k++) chips += '<span class="chip' + (sz[k].q <= 0 ? ' zero' : '') + '">' + esc(sz[k].s) + ' · ' + sz[k].q + '</span>';
+    h += '<tr data-row="' + key + '"' + (open ? ' class="open"' : '') + '>' +
+      '<td class="primary"><span class="exp-toggle">' + (open ? '▴' : '▾') + '</span><b>' + esc(p.name) + '</b><span class="m-only muted"> · ' + totalStock(p) + ' τμχ</span></td>' +
+      '<td data-l="Κωδικός">' + esc(p.code || "—") + '</td>' +
+      '<td data-l="Κατηγορία">' + esc(p.category || "—") + '</td>' +
+      '<td class="act">' + (chips || '<span class="muted">—</span>') + '</td>' +
+      '<td data-l="Σύνολο" class="num d-only">' + totalStock(p) + '</td>' +
+      '<td class="num"><button class="btn small" data-edit="' + esc(p.id) + '">Επεξεργασία</button></td></tr>';
+  }
+  return h + '</tbody></table></div>';
+}
+
+function openProductModal(id){
+  var p = id ? findProduct(id) : null;
+  var rows = p ? cloneSizes(p.sizes) : [{ s: "S", q: 0 }, { s: "M", q: 0 }, { s: "L", q: 0 }];
+  /* baseSizes: οι ποσότητες τη στιγμή που άνοιξε η φόρμα (βλ. saveProduct). */
+  var base = {};
+  if (p) for (var i = 0; i < rows.length; i++) base[rows[i].s] = rows[i].q;
+
+  function sizeRowsHtml(){
+    var h = "";
+    for (var i = 0; i < rows.length; i++) {
+      h += '<div class="sr"><input type="text" data-sl="' + i + '" value="' + esc(rows[i].s) + '" placeholder="π.χ. M, 42">' +
+           '<input type="number" min="0" step="1" data-sq="' + i + '" value="' + rows[i].q + '">' +
+           '<button class="btn small" data-rm="' + i + '" title="Αφαίρεση μεγέθους">×</button></div>';
+    }
+    return h;
+  }
+  function body(){
+    return '<div class="card pad modal">' +
+      '<h3>' + (p ? 'Επεξεργασία ρούχου' : 'Νέο ρούχο') + '</h3>' +
+      '<div style="margin:14px 0"><label class="f">Όνομα *</label><input type="text" id="fName" value="' + esc(p ? p.name : "") + '"></div>' +
+      '<div class="row" style="margin-bottom:14px;flex-wrap:nowrap"><div style="flex:1"><label class="f">Κωδικός</label><input type="text" id="fCode" value="' + esc(p ? p.code || "" : "") + '"></div>' +
+      '<div style="flex:1"><label class="f">Κατηγορία</label><input type="text" id="fCat" value="' + esc(p ? p.category || "" : "") + '" placeholder="π.χ. Παντελόνια"></div></div>' +
+      '<label class="f">Μεγέθη & απόθεμα</label><div class="size-rows" id="sizeRows">' + sizeRowsHtml() + '</div>' +
+      '<button class="btn small" data-add>+ Μέγεθος</button>' +
+      (p ? '<p class="muted" style="font-size:12px">Αν γίνει πώληση ενώ η φόρμα είναι ανοιχτή, δεν χάνεται: αποθηκεύεται μόνο η αλλαγή που κάνατε εσείς.</p>' : '') +
+      '<div class="row" style="margin-top:18px">' + (p ? '<button class="btn danger" data-del>Διαγραφή</button>' : '') +
+      '<span class="spacer"></span><button class="btn" data-close>Ακύρωση</button><button class="btn primary" data-save>Αποθήκευση</button></div></div>';
+  }
+  /* Πριν ξαναζωγραφίσουμε τις γραμμές μεγεθών, διαβάζουμε ό,τι έχει
+     πληκτρολογηθεί, αλλιώς το "+ Μέγεθος" θα έσβηνε τις αλλαγές. */
+  function readRows(){
+    var out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var l = m.querySelector('[data-sl="' + i + '"]'), q = m.querySelector('[data-sq="' + i + '"]');
+      out.push({ s: l ? l.value.trim() : rows[i].s, q: q ? Math.max(0, parseInt(q.value, 10) || 0) : rows[i].q });
+    }
+    rows = out;
+  }
+
+  var m = openModal(body());
+  m.onclick = function(e){
+    var t = e.target.closest ? e.target.closest("button") : null;
+    if (e.target === m || (t && t.hasAttribute("data-close"))) { closeModal(); return; }
+    if (!t) return;
+    if (t.hasAttribute("data-add")) { readRows(); rows.push({ s: "", q: 0 }); $("sizeRows").innerHTML = sizeRowsHtml(); }
+    else if (t.hasAttribute("data-rm")) { readRows(); rows.splice(+t.getAttribute("data-rm"), 1); $("sizeRows").innerHTML = sizeRowsHtml(); }
+    else if (t.hasAttribute("data-del")) {
+      if (!confirmInline(t, "Σίγουρα;")) return;
+      deleteProduct(p.id).then(function(){ closeModal(); showOk("Διαγράφηκε."); }, function(err){ showError("Διαγραφή", err); });
+    }
+    else if (t.hasAttribute("data-save")) {
+      readRows();
+      var name = $("fName").value.trim();
+      if (!name) { $("fName").focus(); return; }
+      var seen = {}, clean = [];
+      for (var i = 0; i < rows.length; i++) {
+        if (!rows[i].s) continue;
+        if (seen[rows[i].s]) { showError("Αποθήκευση", new Error("Το μέγεθος «" + rows[i].s + "» υπάρχει δύο φορές.")); return; }
+        seen[rows[i].s] = true; clean.push(rows[i]);
+      }
+      t.disabled = true;
+      saveProduct(p ? p.id : null, { name: name, code: $("fCode").value.trim(), category: $("fCat").value.trim(), sizes: clean }, base)
+        .then(function(){ closeModal(); showOk("Αποθηκεύτηκε."); }, function(err){ t.disabled = false; showError("Αποθήκευση", err); });
+    }
+  };
+}
+
+/* Επιβεβαίωση με δεύτερο πάτημα στο ίδιο κουμπί, αντί για confirm():
+   το native confirm μπλοκάρει όλη τη σελίδα και σε κάποια in-app browsers
+   απλώς δεν εμφανίζεται. */
+function confirmInline(btn, label){
+  if (btn.getAttribute("data-armed")) return true;
+  btn.setAttribute("data-armed", "1");
+  var old = btn.textContent;
+  btn.textContent = label;
+  setTimeout(function(){ if (btn) { btn.removeAttribute("data-armed"); btn.textContent = old; } }, 3000);
+  return false;
+}
+
+/* ---------- Ρυθμίσεις (ιδιοκτήτης) ---------- */
+function renderSettings(){
+  return '<h2>Ρυθμίσεις</h2><div class="card pad" style="max-width:420px">' +
+    '<label class="f">PIN υπαλλήλου</label><div class="row" style="flex-wrap:nowrap">' +
+    '<input type="text" id="empPin" inputmode="numeric" maxlength="8" value="' + esc(settings.employeePin) + '">' +
+    '<button class="btn primary" data-savepin>Αποθήκευση</button></div>' +
+    '<p class="muted" style="font-size:13px">Το PIN ιδιοκτήτη ορίζεται μέσα στον κώδικα (ADMIN_PIN). ' +
+    'Τα PIN αποτρέπουν λάθη ρόλου — δεν είναι πραγματική προστασία δεδομένων.</p></div>' +
+    '<p class="muted" style="margin-top:20px;font-size:13px">' + (offline ? 'Κατάσταση: <b>offline mode</b>' : 'Κατάσταση: συνδεδεμένο στο Firestore (' + esc(FIREBASE_CONFIG.projectId) + ')') + '</p>';
+}
+
+
+/* ==========================================================================
+   9. MODAL
+   ========================================================================== */
+function openModal(html){
+  var root = $("modalRoot");
+  root.innerHTML = '<div class="modal-bg">' + html + '</div>';
+  return root.firstChild;
+}
+function closeModal(){ $("modalRoot").innerHTML = ""; }
+document.addEventListener("keydown", function(e){ if (e.key === "Escape" || e.keyCode === 27) closeModal(); });
+
+
+/* ==========================================================================
+   10. EVENTS
+   Event delegation στο #view: το innerHTML ξαναγράφεται σε κάθε render,
+   οπότε handlers δεμένοι σε μεμονωμένα στοιχεία θα χάνονταν.
+   ========================================================================== */
+function bindEvents(){
+  var roleBtns = document.querySelectorAll(".roles button");
+  for (var i = 0; i < roleBtns.length; i++) {
+    roleBtns[i].onclick = function(){ selectLoginRole(this.getAttribute("data-role")); $("pin").focus(); };
+  }
+  $("loginBtn").onclick = tryLogin;
+  $("pin").onkeydown = function(e){ if (e.key === "Enter" || e.keyCode === 13) tryLogin(); };
+  $("logoutBtn").onclick = function(){ setRole(null); };
+
+  $("tabs").onclick = function(e){
+    var b = e.target.closest ? e.target.closest("button") : null;
+    if (!b) return;
+    tab = b.getAttribute("data-tab");
+    search = "";
+    renderAll();
+  };
+
+  $("view").addEventListener("input", function(e){
+    if (e.target.id === "search") { search = e.target.value; renderAll(); }
+  });
+  $("view").addEventListener("change", function(e){
+    if (e.target.id === "reportDate" && e.target.value) {
+      reportDay = e.target.value > currentDay ? currentDay : e.target.value;
+      subscribeReport();
+    }
+  });
+
+  $("view").addEventListener("click", function(e){
+    var b = e.target.closest ? e.target.closest("button") : null;
+    if (b) {
+      if (b.hasAttribute("data-sell")) { openSellModal(b.getAttribute("data-sell"), b.getAttribute("data-size")); return; }
+      if (b.hasAttribute("data-undo")) {
+        if (!confirmInline(b, "Σίγουρα;")) return;
+        b.disabled = true;
+        undoSale(b.getAttribute("data-undo")).then(function(){ showOk("Η πώληση αναιρέθηκε."); }, function(err){ b.disabled = false; showError("Αναίρεση", err); });
+        return;
+      }
+      if (b.hasAttribute("data-new")) { openProductModal(null); return; }
+      if (b.hasAttribute("data-edit")) { openProductModal(b.getAttribute("data-edit")); return; }
+      if (b.hasAttribute("data-day")) { reportDay = shiftDay(reportDay, +b.getAttribute("data-day")); if (reportDay > currentDay) reportDay = currentDay; subscribeReport(); return; }
+      if (b.hasAttribute("data-print")) { window.print(); return; }
+      if (b.hasAttribute("data-savepin")) {
+        var v = $("empPin").value.trim();
+        if (!/^\d{4,8}$/.test(v)) { showError("PIN", new Error("Το PIN πρέπει να είναι 4–8 ψηφία.")); return; }
+        saveEmployeePin(v).then(function(){ showOk("Το PIN αποθηκεύτηκε."); }, function(err){ showError("PIN", err); });
+        return;
+      }
+      return;
+    }
+    /* Tap σε compact κάρτα (mobile) → expand/collapse. Σε desktop δεν
+       αλλάζει τίποτα οπτικά, γιατί όλα τα κελιά είναι ήδη ορατά. */
+    var tr = e.target.closest ? e.target.closest("tr[data-row]") : null;
+    if (tr) { var k = tr.getAttribute("data-row"); openRows[k] = !openRows[k]; renderAll(); }
+  });
+}
+
+
+/* ==========================================================================
+   11. BOOT
+   ========================================================================== */
+function injectResponsiveHelpers(){
+  /* .m-only / .d-only: ίδια πληροφορία, διαφορετική θέση σε mobile/desktop.
+     Ορίζονται εδώ κοντά στη χρήση τους για να είναι προφανής ο σκοπός. */
+  var st = document.createElement("style");
+  st.textContent = ".m-only{display:none}@media (max-width:900px){.m-only{display:inline}table.t.cards td.d-only{display:none !important}}";
+  document.head.appendChild(st);
+}
+
+function boot(){
+  injectResponsiveHelpers();
+  bindEvents();
+  initFirebase();
+  startListeners();
+  var r = savedRole();
+  if (r) setRole(r); else showLogin();
+}
+
+boot();
+
+})();
+</script>
+</body>
+</html>
